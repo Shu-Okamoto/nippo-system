@@ -12,12 +12,12 @@ export default function Home() {
         <ul className="space-y-2">
           <li>
             <Link href="/store/iwakuni/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
-              ▸ 岩国本店 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/iwakuni/today</span>
+              ▸ 西店 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/nishi/today</span>
             </Link>
           </li>
           <li>
             <Link href="/store/dai2/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
-              ▸ 第二店舗 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/dai2/today</span>
+              ▸ 南店 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/minami/today</span>
             </Link>
           </li>
         </ul>
