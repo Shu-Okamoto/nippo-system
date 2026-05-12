@@ -11,12 +11,12 @@ export default function Home() {
         <p className="text-sm mb-4 text-muted">各店舗のスマホで以下URLをブックマーク・ホーム画面追加してください。</p>
         <ul className="space-y-2">
           <li>
-            <Link href="/store/iwakuni/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
+            <Link href="/store/nishi/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
               ▸ 西店 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/nishi/today</span>
             </Link>
           </li>
           <li>
-            <Link href="/store/dai2/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
+            <Link href="/store/minami/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
               ▸ 南店 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/minami/today</span>
             </Link>
           </li>

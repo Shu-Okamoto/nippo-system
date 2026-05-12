@@ -17,6 +17,7 @@ type DashRow = {
   weather?: string | null;
   report_text?: string | null;
   kizuki?: string | null;
+  extras?: { id: number; name: string; planned_qty: number }[];
 };
 
 const WEATHER_LABEL: Record<string, string> = {
@@ -45,14 +46,27 @@ export default function DashboardPage() {
         .select('id, weather, report_text, kizuki, store_id, stores(name)')
         .eq('report_date', date);
 
+      const reportIds = (reports || []).map((r: any) => r.id);
+      const { data: extraRows } = reportIds.length
+        ? await supabase
+            .from('daily_order_extras')
+            .select('id, daily_report_id, name, planned_qty')
+            .in('daily_report_id', reportIds)
+            .order('id')
+        : { data: [] as any[] };
+
       const merged: DashRow[] = (kpi || []).map((k) => {
         const r = (reports || []).find((x) => x.id === k.daily_report_id) as any;
+        const ex = (extraRows || [])
+          .filter((e: any) => e.daily_report_id === k.daily_report_id)
+          .map((e: any) => ({ id: e.id, name: e.name, planned_qty: e.planned_qty }));
         return {
           ...k,
           store_name: r?.stores?.name,
           weather: r?.weather,
           report_text: r?.report_text,
           kizuki: r?.kizuki,
+          extras: ex,
         };
       });
       setRows(merged);
@@ -137,6 +151,19 @@ export default function DashboardPage() {
                         {r.kizuki}
                       </div>
                     )}
+                  </div>
+                )}
+                {r.extras && r.extras.length > 0 && (
+                  <div className="border-t border-dashed border-ink p-4 text-sm">
+                    <b className="font-mincho text-accent mr-2 block mb-2">臨時アイテム</b>
+                    <ul className="font-mono text-xs space-y-1">
+                      {r.extras.map((e) => (
+                        <li key={e.id} className="flex justify-between border-b border-dashed border-ink/30 pb-1">
+                          <span>{e.name}</span>
+                          <span className="font-bold">{e.planned_qty}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Store, Staff, Product, ShiftEntry, Weather, EntryType } from '@/lib/types';
+import type { Store, Staff, Product, ShiftEntry, Weather, EntryType, OrderExtra } from '@/lib/types';
 import { totalHours, ninjibai, kyakuTanka, formatJpy, shiftMinutes } from '@/lib/calc';
 import { WeatherPicker } from '@/components/staff/WeatherPicker';
 import { NumInput } from '@/components/staff/NumInput';
@@ -42,6 +42,9 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   });
   const [shifts, setShifts] = useState<ShiftEntry[]>([]);
   const [orders, setOrders] = useState<Record<number, number>>({});
+  const [extras, setExtras] = useState<OrderExtra[]>([]);
+  const [reportId, setReportId] = useState<number | null>(null);
+  const [newExtraName, setNewExtraName] = useState('');
   const [shiftTab, setShiftTab] = useState<EntryType>('actual');
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -87,6 +90,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         const { data: todayData } = await supabase.rpc('get_today_report', { p_slug: slug });
         if (todayData && todayData.length > 0) {
           const r = todayData[0];
+          setReportId(r.report_id);
           setReport({
             weather: r.weather,
             sales_forecast: r.sales_forecast,
@@ -99,7 +103,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
             bikou: r.bikou || '',
           });
 
-          // シフト・注文をロード
+          // シフト・注文・臨時アイテムをロード
           const { data: shiftData } = await supabase
             .from('shift_entries')
             .select('*')
@@ -116,6 +120,13 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
             orderMap[o.product_id] = o.planned_qty;
           });
           setOrders(orderMap);
+
+          const { data: extraData } = await supabase
+            .from('daily_order_extras')
+            .select('*')
+            .eq('daily_report_id', r.report_id)
+            .order('id');
+          setExtras(extraData || []);
         }
       } catch (e: any) {
         setError(e.message);
@@ -236,6 +247,77 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     else setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
   };
 
+  // 日報idの確保(まだ無ければ作る)
+  const ensureReportId = async (): Promise<number | null> => {
+    if (reportId) return reportId;
+    // 現在のreport stateで一旦保存して作成させる
+    await supabase.rpc('upsert_daily_report', {
+      p_slug: slug,
+      p_weather: report.weather,
+      p_sales_forecast: report.sales_forecast,
+      p_sales_actual: report.sales_actual,
+      p_customer_count: report.customer_count,
+      p_sozai_zan: report.sozai_zan,
+      p_mochi_zan: report.mochi_zan,
+      p_report_text: report.report_text,
+      p_kizuki: report.kizuki,
+      p_bikou: report.bikou,
+    });
+    const { data } = await supabase.rpc('get_today_report', { p_slug: slug });
+    if (data && data.length > 0) {
+      setReportId(data[0].report_id);
+      return data[0].report_id as number;
+    }
+    return null;
+  };
+
+  // 臨時アイテム追加
+  const addExtra = async () => {
+    const name = newExtraName.trim();
+    if (!name) return;
+    const rid = await ensureReportId();
+    if (!rid) {
+      setError('日報の作成に失敗しました');
+      return;
+    }
+    const { data, error: e } = await supabase
+      .from('daily_order_extras')
+      .insert({ daily_report_id: rid, name, planned_qty: 0 })
+      .select()
+      .single();
+    if (e || !data) {
+      setError(e?.message || '追加に失敗しました');
+      return;
+    }
+    setExtras((prev) => [...prev, data as OrderExtra]);
+    setNewExtraName('');
+    setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+  };
+
+  // 臨時アイテム数量変更
+  const setExtraQty = async (id: number, qty: number) => {
+    setExtras((prev) => prev.map((x) => (x.id === id ? { ...x, planned_qty: qty } : x)));
+    const { error: e } = await supabase
+      .from('daily_order_extras')
+      .update({ planned_qty: qty })
+      .eq('id', id);
+    if (e) setError(e.message);
+    else setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+  };
+
+  // 臨時アイテム削除(物理削除)
+  const deleteExtra = async (id: number) => {
+    const prev = extras;
+    setExtras((cur) => cur.filter((x) => x.id !== id));
+    const { error: e } = await supabase.from('daily_order_extras').delete().eq('id', id);
+    if (e) {
+      setError(e.message);
+      setExtras(prev);
+    } else {
+      setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+    }
+  };
+
   // 計算KPI
   const visibleShifts = shifts.filter((s) => s.entry_type === shiftTab);
   const totalH = totalHours(shifts);
@@ -281,6 +363,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 天気 */}
       <Section label="天気" hideTitle>
+        <TextArea label="日報" value={report.report_text} onChange={(v) => saveReport({ report_text: v })} />
         <WeatherPicker value={report.weather} onChange={(v) => saveReport({ weather: v })} />
       </Section>
 
@@ -401,22 +484,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           </div>
         </div>
       </Section>
-
-      {/* 本部注文 */}
-      <Section label="本部への注文" title="明日の注文票">
-        {products.map((p) => (
-          <OrderRow
-            key={p.id}
-            name={p.name}
-            qty={orders[p.id] || 0}
-            onChange={(v) => setOrderQty(p.id, v)}
-          />
-        ))}
-      </Section>
-
-      {/* 日報 */}
+     {/* 日報 */}
       <Section label="日報・気づき" title="ひとこと">
-        <TextArea label="日報" value={report.report_text} onChange={(v) => saveReport({ report_text: v })} />
         <TextArea label="気づき" value={report.kizuki} onChange={(v) => saveReport({ kizuki: v })} />
         <TextArea
           label="惣菜残・餅残・備考"
@@ -437,6 +506,53 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         />
       </Section>
 
+      {/* 本部注文 */}
+      <Section label="本部への注文" title="明日の注文票">
+        {products.map((p) => (
+          <OrderRow
+            key={`p-${p.id}`}
+            name={p.name}
+            qty={orders[p.id] || 0}
+            onChange={(v) => setOrderQty(p.id, v)}
+          />
+        ))}
+        {extras.map((x) => (
+          <OrderRow
+            key={`x-${x.id}`}
+            name={`${x.name}  〔臨時〕`}
+            qty={x.planned_qty}
+            onChange={(v) => setExtraQty(x.id, v)}
+            onDelete={() => deleteExtra(x.id)}
+          />
+        ))}
+
+        <div className="mt-4 p-3 bg-paper2 border-2 border-dashed border-ink">
+          <b className="font-mincho block mb-2 text-sm">＋ 臨時アイテムを追加</b>
+          <p className="text-[11px] text-muted font-mono mb-2">※ 本日限り。翌日には引き継がれません</p>
+          <div className="flex gap-2">
+            <input
+              placeholder="商品名"
+              value={newExtraName}
+              onChange={(e) => setNewExtraName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addExtra();
+                }
+              }}
+              className="flex-1 p-2 border-2 border-ink bg-paper text-sm"
+            />
+            <button
+              onClick={addExtra}
+              className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm"
+            >
+              追加
+            </button>
+          </div>
+        </div>
+      </Section>
+
+     
       <div className="p-4 bg-ink text-paper text-center font-mincho text-sm font-bold tracking-widest">
         自動保存されています
         <small className="block font-mono text-[10px] opacity-70 mt-1 tracking-widest">

@@ -106,10 +106,18 @@ export async function GET(req: NextRequest) {
     .eq('is_active', true)
     .order('sort_order');
 
+  const reportIds = reports.map((r) => r.id);
+
   const { data: orderLines } = await supabase
     .from('order_lines')
     .select('daily_report_id, product_id, planned_qty')
-    .in('daily_report_id', reports.map((r) => r.id));
+    .in('daily_report_id', reportIds);
+
+  const { data: extras } = await supabase
+    .from('daily_order_extras')
+    .select('daily_report_id, name, planned_qty')
+    .in('daily_report_id', reportIds)
+    .order('id');
 
   const rows: Row[] = reports.map((r) => {
     const items = (products || []).map((p) => {
@@ -118,10 +126,13 @@ export async function GET(req: NextRequest) {
       );
       return { name: p.name, planned_qty: ol?.planned_qty || 0 };
     });
+    const extraItems = (extras || [])
+      .filter((x) => x.daily_report_id === r.id)
+      .map((x) => ({ name: `${x.name}（臨時）`, planned_qty: x.planned_qty }));
     return {
       store_name: (r.stores as any)?.name || `店舗${r.store_id}`,
       date,
-      items,
+      items: [...items, ...extraItems],
     };
   });
 

@@ -66,3 +66,10 @@ export type OrderLine = {
   planned_qty: number;
   actual_qty: number;
 };
+
+export type OrderExtra = {
+  id: number;
+  daily_report_id: number;
+  name: string;
+  planned_qty: number;
+};
