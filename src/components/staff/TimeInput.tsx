@@ -1,14 +1,34 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-// HH:MM(またはH:MM)文字列を正規化
-function normalize(s: string): string {
-  const m = s.match(/^(\d{1,2})[:：]?(\d{0,2})$/);
-  if (!m) return s;
-  const h = Number(m[1]);
-  const min = Number(m[2] || '0');
-  if (isNaN(h) || isNaN(min)) return s;
-  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+// HH:MM形式に正規化できるか試みる
+function tryNormalize(s: string): string | null {
+  // 数字のみ入力を許容(例: 900 → 09:00, 1300 → 13:00)
+  const digits = s.replace(/[^\d]/g, '');
+  if (digits.length === 3) {
+    const h = Number(digits.slice(0, 1));
+    const m = Number(digits.slice(1));
+    if (h >= 0 && h <= 9 && m >= 0 && m <= 59) {
+      return `0${h}:${String(m).padStart(2, '0')}`;
+    }
+  }
+  if (digits.length === 4) {
+    const h = Number(digits.slice(0, 2));
+    const m = Number(digits.slice(2));
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+  // コロン区切り入力(例: 9:00, 13:00)
+  const m = s.match(/^(\d{1,2})[:：](\d{2})$/);
+  if (m) {
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
+  }
+  return null;
 }
 
 export function TimeInput({
@@ -22,11 +42,35 @@ export function TimeInput({
   placeholder?: string;
   className?: string;
 }) {
-  const [text, setText] = useState(value || '');
+  const [text, setText] = useState(value ? value.slice(0, 5) : '');
 
   useEffect(() => {
     setText(value ? value.slice(0, 5) : '');
   }, [value]);
+
+  const handleChange = (s: string) => {
+    setText(s);
+    // 正規化できる形式になった時点で即時通知(スマホ完了ボタン対応)
+    const normalized = tryNormalize(s);
+    if (normalized) {
+      onChange(normalized);
+    }
+  };
+
+  const handleBlur = () => {
+    if (!text) {
+      onChange(null);
+      return;
+    }
+    const normalized = tryNormalize(text);
+    if (normalized) {
+      setText(normalized);
+      onChange(normalized);
+    } else {
+      // 正規化できない場合はリセット
+      setText(value ? value.slice(0, 5) : '');
+    }
+  };
 
   return (
     <input
@@ -34,16 +78,8 @@ export function TimeInput({
       inputMode="numeric"
       value={text}
       placeholder={placeholder}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        if (!text) {
-          onChange(null);
-        } else {
-          const n = normalize(text);
-          setText(n);
-          onChange(n);
-        }
-      }}
+      onChange={(e) => handleChange(e.target.value)}
+      onBlur={handleBlur}
       className={`px-3 py-2 font-mono text-base font-bold text-center border-2 border-ink bg-paper ${className}`}
     />
   );
