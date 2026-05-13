@@ -14,10 +14,12 @@ import {
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// 日本語フォント(Google FontsのNoto Serif JP)
+// 日本語フォント(Google FontsのNoto Serif JP Bold, weight 700)
+// 注意: URL末尾のハッシュはGoogle Fontsのバージョン更新で変わる。404になったら
+// https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@700&subset=japanese&display=swap から再取得すること
 Font.register({
   family: 'NotoSerifJP',
-  src: 'https://fonts.gstatic.com/ea/notoserifjp/v6/NotoSerifJP-Bold.otf',
+  src: 'https://fonts.gstatic.com/s/notoserifjp/v33/xn71YHs72GKoTvER4Gn3b5eMRtWGkp6o7MjQ2bzWPebA.ttf',
 });
 
 const styles = StyleSheet.create({
@@ -84,9 +86,17 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
 
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    return new NextResponse(
+      'サーバー設定エラー: SUPABASE_SERVICE_ROLE_KEY が未設定です',
+      { status: 500 }
+    );
+  }
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    serviceKey,
+    { auth: { persistSession: false, autoRefreshToken: false } }
   );
 
   // 全店舗の当日日報
