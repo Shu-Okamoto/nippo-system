@@ -324,6 +324,18 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const kpi = ninjibai(report.sales_actual, totalH);
   const tanka = kyakuTanka(report.sales_actual, report.customer_count);
 
+  // 日報に最低1項目入力されているか(シフト/注文セクションのロック判定)
+  const hasReportInput =
+    report.weather !== null ||
+    report.sales_forecast !== null ||
+    report.sales_actual !== null ||
+    report.customer_count !== null ||
+    report.sozai_zan !== null ||
+    report.mochi_zan !== null ||
+    report.report_text.trim() !== '' ||
+    report.kizuki.trim() !== '' ||
+    report.bikou.trim() !== '';
+
   const getStaffName = (s: ShiftEntry): string => {
     if (s.staff_id) {
       const m = staffList.find((x) => x.id === s.staff_id);
@@ -358,6 +370,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         )}
         {error && (
           <div className="mt-2 text-xs text-accent font-bold">⚠ {error}</div>
+        )}
+        {!hasReportInput && (
+          <div className="mt-2 px-2.5 py-1.5 bg-accent text-paper text-xs font-bold border-2 border-ink">
+            ▸ 先に日報を入力してください（天気・売上・気づき等のいずれか）
+          </div>
         )}
       </div>
 
@@ -396,6 +413,10 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* シフト */}
       <Section label="ワークスケジュール" title="シフト">
+        <div
+          className={!hasReportInput ? 'pointer-events-none opacity-40 select-none' : ''}
+          aria-disabled={!hasReportInput}
+        >
         <div className="flex border-2 border-ink mb-3">
           {(['plan', 'actual'] as EntryType[]).map((t) => (
             <button
@@ -483,6 +504,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
             </div>
           </div>
         </div>
+        </div>
       </Section>
      {/* 日報 */}
       <Section label="日報・気づき" title="ひとこと">
@@ -508,6 +530,10 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 本部注文 */}
       <Section label="本部への注文" title="明日の注文票">
+        <div
+          className={!hasReportInput ? 'pointer-events-none opacity-40 select-none' : ''}
+          aria-disabled={!hasReportInput}
+        >
         {products.map((p) => (
           <OrderRow
             key={`p-${p.id}`}
@@ -549,6 +575,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
               追加
             </button>
           </div>
+        </div>
         </div>
       </Section>
 
