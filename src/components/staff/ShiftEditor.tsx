@@ -51,7 +51,7 @@ export function ShiftEditor({
           {isThrough && (
             <div className="mt-2 p-2.5 bg-yellow-50 border-2 border-dashed border-ink">
               <b className="font-mincho text-xs block mb-1.5">休憩時間</b>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <input
                   type="number"
                   inputMode="numeric"
@@ -60,6 +60,9 @@ export function ShiftEditor({
                   className="w-16 p-2 font-mono text-base font-bold text-center border-2 border-ink bg-paper"
                 />
                 <span className="text-xs font-bold text-muted">分</span>
+                <span className="ml-auto font-mono text-[11px] text-muted whitespace-nowrap">
+                  → 実労 {hours}h
+                </span>
               </div>
             </div>
           )}
@@ -71,35 +74,34 @@ export function ShiftEditor({
               value={entry.start_time}
               onChange={(v) => onChange({ start_time: v })}
               placeholder="9:00"
-              className="flex-1"
+              className="flex-1 min-w-0"
             />
             <span className="font-mono font-extrabold">─</span>
             <TimeInput
               value={entry.end_time}
               onChange={(v) => onChange({ end_time: v })}
               placeholder="17:00"
-              className="flex-1"
+              className="flex-1 min-w-0"
             />
           </div>
 
           {showBreak && (
             <div className="mt-2 p-2.5 bg-yellow-50 border-2 border-dashed border-ink">
-              <b className="font-mincho text-xs block mb-1.5">休憩(任意)</b>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-muted">入</span>
+              <b className="font-mincho text-xs block mb-2">休憩(任意)</b>
+              <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-2 items-center">
+                <span className="text-xs font-bold text-muted">休憩入</span>
                 <TimeInput
                   value={entry.break_start}
                   onChange={(v) => onChange({ break_start: v })}
                   placeholder="13:00"
-                  className="flex-1"
+                  className="w-full"
                 />
-                <span className="font-mono font-extrabold">─</span>
-                <span className="text-xs font-bold text-muted">出</span>
+                <span className="text-xs font-bold text-muted">休憩出</span>
                 <TimeInput
                   value={entry.break_end}
                   onChange={(v) => onChange({ break_end: v })}
                   placeholder="14:00"
-                  className="flex-1"
+                  className="w-full"
                 />
               </div>
             </div>
