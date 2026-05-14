@@ -240,21 +240,20 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   // 注文: 臨時商品を追加(registerToMaster=true なら商品マスタにも登録)
   const addOrderManual = async (name: string, registerToMaster: boolean) => {
     if (registerToMaster) {
-      // 商品マスタに登録 → products を再取得 → マスタ商品として追加
-      const maxSort = Math.max(0, ...products.map((p) => p.sort_order));
-      const { data: newProduct, error: e } = await supabase
-        .from('products')
-        .insert({ name, category: 'その他', sort_order: maxSort + 1 })
-        .select()
-        .single();
+      // 商品マスタに登録(RPC経由でRLSを貫通)
+      const { data: newProduct, error: e } = await supabase.rpc('add_product', {
+        p_name: name,
+        p_category: 'その他',
+      });
       if (e) {
         setError(e.message);
         return;
       }
-      setProducts((prev) => [...prev, newProduct as Product]);
+      const np = newProduct as Product;
+      setProducts((prev) => [...prev, np]);
       setOrders((prev) => [
         ...prev,
-        { rowId: nextLocalId(), product_id: newProduct.id, item_name_manual: null, planned_qty: 1 },
+        { rowId: nextLocalId(), product_id: np.id, item_name_manual: null, planned_qty: 1 },
       ]);
     } else {
       // 今回だけの臨時商品
