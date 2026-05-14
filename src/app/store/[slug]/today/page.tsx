@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Store, Staff, Product, ShiftEntry, Weather, EntryType, OrderExtra } from '@/lib/types';
+import type { Store, Staff, Product, ShiftEntry, Weather, EntryType, ShiftPattern } from '@/lib/types';
 import { totalHours, ninjibai, kyakuTanka, formatJpy, shiftMinutes } from '@/lib/calc';
 import { WeatherPicker } from '@/components/staff/WeatherPicker';
 import { NumInput } from '@/components/staff/NumInput';
@@ -23,12 +23,20 @@ type ReportState = {
   bikou: string;
 };
 
+type LocalShift = ShiftEntry;
+
+let localIdCounter = -1;
+function nextLocalId(): number {
+  return localIdCounter--;
+}
+
 export default function TodayPage({ params }: { params: { slug: string } }) {
   const slug = params.slug;
 
   const [store, setStore] = useState<Store | null>(null);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+
   const [report, setReport] = useState<ReportState>({
     weather: null,
     sales_forecast: null,
@@ -40,301 +48,246 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     kizuki: '',
     bikou: '',
   });
-  const [shifts, setShifts] = useState<ShiftEntry[]>([]);
+  const [shifts, setShifts] = useState<LocalShift[]>([]);
   const [orders, setOrders] = useState<Record<number, number>>({});
-  const [extras, setExtras] = useState<OrderExtra[]>([]);
-  const [reportId, setReportId] = useState<number | null>(null);
-  const [newExtraName, setNewExtraName] = useState('');
+
   const [shiftTab, setShiftTab] = useState<EntryType>('actual');
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
+
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 初期ロード
-  useEffect(() => {
-    (async () => {
-      try {
-        // 店舗特定
-        const { data: s, error: e1 } = await supabase
-          .from('stores')
-          .select('*')
-          .eq('slug', slug)
-          .eq('is_active', true)
-          .single();
-        if (e1 || !s) {
-          setError('店舗が見つかりません');
-          setLoading(false);
-          return;
-        }
-        setStore(s);
+  const markDirty = () => setIsDirty(true);
 
-        // スタッフマスタ
-        const { data: staffData } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('store_id', s.id)
-          .eq('is_active', true)
-          .order('sort_order');
-        setStaffList(staffData || []);
-
-        // 商品マスタ
-        const { data: prodData } = await supabase
-          .from('products')
-          .select('*')
-          .eq('is_active', true)
-          .order('sort_order');
-        setProducts(prodData || []);
-
-        // 今日の日報
-        const { data: todayData } = await supabase.rpc('get_today_report', { p_slug: slug });
-        if (todayData && todayData.length > 0) {
-          const r = todayData[0];
-          setReportId(r.report_id);
-          setReport({
-            weather: r.weather,
-            sales_forecast: r.sales_forecast,
-            sales_actual: r.sales_actual,
-            customer_count: r.customer_count,
-            sozai_zan: r.sozai_zan,
-            mochi_zan: r.mochi_zan,
-            report_text: r.report_text || '',
-            kizuki: r.kizuki || '',
-            bikou: r.bikou || '',
-          });
-
-          // シフト・注文・臨時アイテムをロード
-          const { data: shiftData } = await supabase
-            .from('shift_entries')
-            .select('*')
-            .eq('daily_report_id', r.report_id)
-            .order('id');
-          setShifts(shiftData || []);
-
-          const { data: orderData } = await supabase
-            .from('order_lines')
-            .select('*')
-            .eq('daily_report_id', r.report_id);
-          const orderMap: Record<number, number> = {};
-          (orderData || []).forEach((o) => {
-            orderMap[o.product_id] = o.planned_qty;
-          });
-          setOrders(orderMap);
-
-          const { data: extraData } = await supabase
-            .from('daily_order_extras')
-            .select('*')
-            .eq('daily_report_id', r.report_id)
-            .order('id');
-          setExtras(extraData || []);
-        }
-      } catch (e: any) {
-        setError(e.message);
-      } finally {
+  // データフェッチ(初期ロード + タブ復帰時)
+  const loadData = useCallback(async () => {
+    try {
+      const { data: s, error: e1 } = await supabase
+        .from('stores')
+        .select('*')
+        .eq('slug', slug)
+        .eq('is_active', true)
+        .single();
+      if (e1 || !s) {
+        setError('店舗が見つかりません');
         setLoading(false);
+        return;
       }
-    })();
+      setStore(s);
+
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('*')
+        .eq('store_id', s.id)
+        .eq('is_active', true)
+        .order('sort_order');
+      setStaffList(staffData || []);
+
+      const { data: prodData } = await supabase
+        .from('products')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+      setProducts(prodData || []);
+
+      const { data: todayData } = await supabase.rpc('get_today_report', { p_slug: slug });
+      if (todayData && todayData.length > 0) {
+        const r = todayData[0];
+        setReport({
+          weather: r.weather,
+          sales_forecast: r.sales_forecast,
+          sales_actual: r.sales_actual,
+          customer_count: r.customer_count,
+          sozai_zan: r.sozai_zan,
+          mochi_zan: r.mochi_zan,
+          report_text: r.report_text || '',
+          kizuki: r.kizuki || '',
+          bikou: r.bikou || '',
+        });
+
+        const { data: shiftData } = await supabase
+          .from('shift_entries')
+          .select('*')
+          .eq('daily_report_id', r.report_id)
+          .order('id');
+        setShifts(shiftData || []);
+
+        const { data: orderData } = await supabase
+          .from('order_lines')
+          .select('*')
+          .eq('daily_report_id', r.report_id);
+        const orderMap: Record<number, number> = {};
+        (orderData || []).forEach((o: any) => {
+          orderMap[o.product_id] = o.planned_qty;
+        });
+        setOrders(orderMap);
+
+        if (r.report_id) {
+          const { data: lastSaved } = await supabase
+            .from('daily_reports')
+            .select('updated_at')
+            .eq('id', r.report_id)
+            .single();
+          if (lastSaved?.updated_at) {
+            const d = new Date(lastSaved.updated_at);
+            setSavedAt(d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+          }
+        }
+      } else {
+        setShifts([]);
+        setOrders({});
+      }
+      setIsDirty(false);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }, [slug]);
 
-  // 日報の自動保存(debounce)
-  const reportDebounceRef = useRef<NodeJS.Timeout | null>(null);
-  const saveReport = useCallback(
-    (patch: Partial<ReportState>) => {
-      const next = { ...report, ...patch };
-      setReport(next);
-      if (reportDebounceRef.current) clearTimeout(reportDebounceRef.current);
-      reportDebounceRef.current = setTimeout(async () => {
-        const { error: e } = await supabase.rpc('upsert_daily_report', {
-          p_slug: slug,
-          p_weather: next.weather,
-          p_sales_forecast: next.sales_forecast,
-          p_sales_actual: next.sales_actual,
-          p_customer_count: next.customer_count,
-          p_sozai_zan: next.sozai_zan,
-          p_mochi_zan: next.mochi_zan,
-          p_report_text: next.report_text,
-          p_kizuki: next.kizuki,
-          p_bikou: next.bikou,
-        });
-        if (e) setError(e.message);
-        else setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-      }, 800);
-    },
-    [report, slug]
-  );
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  // シフト保存
-  const saveShift = async (id: number, patch: Partial<ShiftEntry>) => {
-    const target = shifts.find((s) => s.id === id);
-    if (!target) return;
-    const next = { ...target, ...patch };
-    setShifts((prev) => prev.map((s) => (s.id === id ? next : s)));
+  // タブ復帰時の再フェッチ — 未保存変更がある時は上書きしない
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !isDirty) {
+        loadData();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadData, isDirty]);
 
-    const { error: e } = await supabase.rpc('upsert_shift_entry', {
-      p_slug: slug,
-      p_shift_id: id > 0 ? id : null,
-      p_staff_id: next.staff_id,
-      p_staff_name_manual: next.staff_name_manual,
-      p_entry_type: next.entry_type,
-      p_pattern: next.pattern,
-      p_start_time: next.start_time,
-      p_end_time: next.end_time,
-      p_break_minutes: next.break_minutes,
-      p_break_start: next.break_start,
-      p_break_end: next.break_end,
-    });
-    if (e) setError(e.message);
-    else setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+  // ページ離脱警告(未保存時)
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  // === ローカル更新(DB呼び出しなし) ===
+
+  const updateReport = (patch: Partial<ReportState>) => {
+    setReport((prev) => ({ ...prev, ...patch }));
+    markDirty();
   };
 
-  // シフト追加
-  const addShift = async (staffId: number | null, staffNameManual: string | null) => {
-    const newEntry: Partial<ShiftEntry> = {
+  const updateShift = (id: number, patch: Partial<ShiftEntry>) => {
+    setShifts((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    markDirty();
+  };
+
+  const addShift = (staffId: number | null, staffNameManual: string | null) => {
+    const exists = shifts.some(
+      (s) =>
+        s.entry_type === shiftTab &&
+        (staffId !== null ? s.staff_id === staffId : s.staff_name_manual === staffNameManual)
+    );
+    if (exists) return;
+
+    const newId = nextLocalId();
+    const newShift: LocalShift = {
+      id: newId,
+      daily_report_id: 0,
       staff_id: staffId,
       staff_name_manual: staffNameManual,
       entry_type: shiftTab,
-      pattern: shiftTab === 'plan' ? 'first' : null,
+      pattern: shiftTab === 'plan' ? ('first' as ShiftPattern) : null,
       start_time: shiftTab === 'actual' ? '09:00' : null,
       end_time: shiftTab === 'actual' ? '17:00' : null,
       break_minutes: 0,
       break_start: null,
       break_end: null,
     };
-
-    const { data, error: e } = await supabase.rpc('upsert_shift_entry', {
-      p_slug: slug,
-      p_shift_id: null,
-      p_staff_id: newEntry.staff_id,
-      p_staff_name_manual: newEntry.staff_name_manual,
-      p_entry_type: newEntry.entry_type,
-      p_pattern: newEntry.pattern,
-      p_start_time: newEntry.start_time,
-      p_end_time: newEntry.end_time,
-      p_break_minutes: newEntry.break_minutes,
-      p_break_start: newEntry.break_start,
-      p_break_end: newEntry.break_end,
-    });
-    if (e) {
-      setError(e.message);
-      return;
-    }
-    const newId = data as number;
-    setShifts((prev) => [...prev, { ...(newEntry as ShiftEntry), id: newId, daily_report_id: 0 }]);
+    setShifts((prev) => [...prev, newShift]);
     setSelectedShiftId(newId);
-    setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+    markDirty();
   };
 
-  // シフト削除
-  const deleteShift = async (id: number) => {
+  const removeShift = (id: number) => {
     setShifts((prev) => prev.filter((s) => s.id !== id));
     if (selectedShiftId === id) setSelectedShiftId(null);
-    const { error: e } = await supabase.rpc('delete_shift_entry', {
-      p_slug: slug,
-      p_shift_id: id,
-    });
-    if (e) setError(e.message);
+    markDirty();
   };
 
-  // 注文数量変更
-  const setOrderQty = async (productId: number, qty: number) => {
+  const updateOrder = (productId: number, qty: number) => {
     setOrders((prev) => ({ ...prev, [productId]: qty }));
-    const { error: e } = await supabase.rpc('set_order_qty', {
-      p_slug: slug,
-      p_product_id: productId,
-      p_planned_qty: qty,
-    });
-    if (e) setError(e.message);
-    else setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+    markDirty();
   };
 
-  // 日報idの確保(まだ無ければ作る)
-  const ensureReportId = async (): Promise<number | null> => {
-    if (reportId) return reportId;
-    // 現在のreport stateで一旦保存して作成させる
-    await supabase.rpc('upsert_daily_report', {
-      p_slug: slug,
-      p_weather: report.weather,
-      p_sales_forecast: report.sales_forecast,
-      p_sales_actual: report.sales_actual,
-      p_customer_count: report.customer_count,
-      p_sozai_zan: report.sozai_zan,
-      p_mochi_zan: report.mochi_zan,
-      p_report_text: report.report_text,
-      p_kizuki: report.kizuki,
-      p_bikou: report.bikou,
-    });
-    const { data } = await supabase.rpc('get_today_report', { p_slug: slug });
-    if (data && data.length > 0) {
-      setReportId(data[0].report_id);
-      return data[0].report_id as number;
-    }
-    return null;
-  };
+  // === 一括保存 ===
 
-  // 臨時アイテム追加
-  const addExtra = async () => {
-    const name = newExtraName.trim();
-    if (!name) return;
-    const rid = await ensureReportId();
-    if (!rid) {
-      setError('日報の作成に失敗しました');
-      return;
-    }
-    const { data, error: e } = await supabase
-      .from('daily_order_extras')
-      .insert({ daily_report_id: rid, name, planned_qty: 0 })
-      .select()
-      .single();
-    if (e || !data) {
-      setError(e?.message || '追加に失敗しました');
-      return;
-    }
-    setExtras((prev) => [...prev, data as OrderExtra]);
-    setNewExtraName('');
-    setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-  };
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
 
-  // 臨時アイテム数量変更
-  const setExtraQty = async (id: number, qty: number) => {
-    setExtras((prev) => prev.map((x) => (x.id === id ? { ...x, planned_qty: qty } : x)));
-    const { error: e } = await supabase
-      .from('daily_order_extras')
-      .update({ planned_qty: qty })
-      .eq('id', id);
-    if (e) setError(e.message);
-    else setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-  };
+    try {
+      const shiftsPayload = shifts.map((s) => ({
+        staff_id: s.staff_id,
+        staff_name_manual: s.staff_name_manual,
+        entry_type: s.entry_type,
+        pattern: s.pattern,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        break_minutes: s.break_minutes,
+        break_start: s.break_start,
+        break_end: s.break_end,
+      }));
 
-  // 臨時アイテム削除(物理削除)
-  const deleteExtra = async (id: number) => {
-    const prev = extras;
-    setExtras((cur) => cur.filter((x) => x.id !== id));
-    const { error: e } = await supabase.from('daily_order_extras').delete().eq('id', id);
-    if (e) {
+      const ordersPayload = Object.entries(orders)
+        .filter(([, qty]) => qty > 0)
+        .map(([pid, qty]) => ({
+          product_id: Number(pid),
+          planned_qty: qty,
+        }));
+
+      const { error: e } = await supabase.rpc('save_daily_report_full', {
+        p_slug: slug,
+        p_weather: report.weather,
+        p_sales_forecast: report.sales_forecast,
+        p_sales_actual: report.sales_actual,
+        p_customer_count: report.customer_count,
+        p_sozai_zan: report.sozai_zan,
+        p_mochi_zan: report.mochi_zan,
+        p_report_text: report.report_text || null,
+        p_kizuki: report.kizuki || null,
+        p_bikou: report.bikou || null,
+        p_shifts: shiftsPayload,
+        p_orders: ordersPayload,
+      });
+
+      if (e) {
+        setError(e.message);
+      } else {
+        setIsDirty(false);
+        setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+        // 保存後にDBから再読込してidを最新化
+        setSelectedShiftId(null);
+        await loadData();
+      }
+    } catch (e: any) {
       setError(e.message);
-      setExtras(prev);
-    } else {
-      setSavedAt(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+    } finally {
+      setSaving(false);
     }
   };
 
-  // 計算KPI
+  // === 計算KPI ===
   const visibleShifts = shifts.filter((s) => s.entry_type === shiftTab);
   const totalH = totalHours(shifts);
   const kpi = ninjibai(report.sales_actual, totalH);
   const tanka = kyakuTanka(report.sales_actual, report.customer_count);
-
-  // 日報に最低1項目入力されているか(シフト/注文セクションのロック判定)
-  const hasReportInput =
-    report.weather !== null ||
-    report.sales_forecast !== null ||
-    report.sales_actual !== null ||
-    report.customer_count !== null ||
-    report.sozai_zan !== null ||
-    report.mochi_zan !== null ||
-    report.report_text.trim() !== '' ||
-    report.kizuki.trim() !== '' ||
-    report.bikou.trim() !== '';
 
   const getStaffName = (s: ShiftEntry): string => {
     if (s.staff_id) {
@@ -358,30 +311,33 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const selectedShift = visibleShifts.find((s) => s.id === selectedShiftId);
 
   return (
-    <div className="max-w-md mx-auto bg-paper min-h-screen">
+    <div className="max-w-md mx-auto bg-paper min-h-screen pb-24">
       {/* ヘッダ */}
       <div className="sticky top-0 z-10 px-5 py-4 border-b-2 border-ink bg-paper">
-        <div className="font-mincho text-xl font-extrabold leading-none">{store?.name}</div>
-        <div className="font-mono text-xs text-muted mt-1 tracking-wider">{dateStr} ({dayName})</div>
-        {savedAt && (
-          <span className="inline-block mt-2 bg-accent2 text-paper px-2.5 py-0.5 text-xs font-bold">
-            ✓ 保存済み {savedAt}
-          </span>
-        )}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="font-mincho text-xl font-extrabold leading-none">{store?.name}</div>
+            <div className="font-mono text-xs text-muted mt-1 tracking-wider">{dateStr} ({dayName})</div>
+          </div>
+          {isDirty ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 border-2 border-accent bg-red-50">
+              <span className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse"></span>
+              <span className="text-xs font-bold text-accent">未保存</span>
+            </div>
+          ) : savedAt ? (
+            <div className="px-2.5 py-1 bg-accent2 text-paper text-xs font-bold">
+              ✓ {savedAt}
+            </div>
+          ) : null}
+        </div>
         {error && (
           <div className="mt-2 text-xs text-accent font-bold">⚠ {error}</div>
-        )}
-        {!hasReportInput && (
-          <div className="mt-2 px-2.5 py-1.5 bg-accent text-paper text-xs font-bold border-2 border-ink">
-            ▸ 先に日報を入力してください（天気・売上・気づき等のいずれか）
-          </div>
         )}
       </div>
 
       {/* 天気 */}
       <Section label="天気" hideTitle>
-        <TextArea label="日報" value={report.report_text} onChange={(v) => saveReport({ report_text: v })} />
-        <WeatherPicker value={report.weather} onChange={(v) => saveReport({ weather: v })} />
+        <WeatherPicker value={report.weather} onChange={(v) => updateReport({ weather: v })} />
       </Section>
 
       {/* 売上 */}
@@ -390,19 +346,19 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           label="売上予測(前年)"
           unit="円"
           value={report.sales_forecast}
-          onChange={(v) => saveReport({ sales_forecast: v })}
+          onChange={(v) => updateReport({ sales_forecast: v })}
         />
         <NumInput
           label="売上実績"
           unit="円"
           value={report.sales_actual}
-          onChange={(v) => saveReport({ sales_actual: v })}
+          onChange={(v) => updateReport({ sales_actual: v })}
         />
         <NumInput
           label="客数"
           unit="人"
           value={report.customer_count}
-          onChange={(v) => saveReport({ customer_count: v })}
+          onChange={(v) => updateReport({ customer_count: v })}
         />
         {tanka !== null && (
           <div className="mt-1 text-xs font-mono text-muted text-right">
@@ -413,10 +369,6 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* シフト */}
       <Section label="ワークスケジュール" title="シフト">
-        <div
-          className={!hasReportInput ? 'pointer-events-none opacity-40 select-none' : ''}
-          aria-disabled={!hasReportInput}
-        >
         <div className="flex border-2 border-ink mb-3">
           {(['plan', 'actual'] as EntryType[]).map((t) => (
             <button
@@ -459,12 +411,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
                 staffName={getStaffName(s)}
                 selected={selectedShiftId === s.id}
                 onSelect={() => setSelectedShiftId(s.id)}
-                onDelete={() => deleteShift(s.id)}
+                onDelete={() => removeShift(s.id)}
               />
             ))
           )}
 
-          {/* 総時間バー */}
           <div className="grid grid-cols-[90px_1fr_50px] bg-gold border-t-2 border-ink font-mincho font-extrabold">
             <div className="p-2.5 px-3 text-xs border-r border-ink">総時間数</div>
             <div className="border-r border-ink"></div>
@@ -485,11 +436,10 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           <ShiftEditor
             entry={selectedShift}
             staffName={getStaffName(selectedShift)}
-            onChange={(patch) => saveShift(selectedShift.id, patch)}
+            onChange={(patch) => updateShift(selectedShift.id, patch)}
           />
         )}
 
-        {/* 人時売 控えめ表示 */}
         <div className="mt-4 -mx-5 px-4 py-3 bg-paper2 border-t-2 border-ink flex items-center justify-between gap-3">
           <div className="font-mincho text-xs font-bold text-muted tracking-wider">
             人時売
@@ -504,87 +454,72 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
             </div>
           </div>
         </div>
-        </div>
       </Section>
-     {/* 日報 */}
+
+      {/* 本部注文 */}
+      <Section label="本部への注文" title="明日の注文票">
+        {products.map((p) => (
+          <OrderRow
+            key={p.id}
+            name={p.name}
+            qty={orders[p.id] || 0}
+            onChange={(v) => updateOrder(p.id, v)}
+          />
+        ))}
+      </Section>
+
+      {/* 日報 */}
       <Section label="日報・気づき" title="ひとこと">
-        <TextArea label="気づき" value={report.kizuki} onChange={(v) => saveReport({ kizuki: v })} />
+        <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
+        <TextArea label="気づき" value={report.kizuki} onChange={(v) => updateReport({ kizuki: v })} />
         <TextArea
           label="惣菜残・餅残・備考"
           value={report.bikou}
-          onChange={(v) => saveReport({ bikou: v })}
+          onChange={(v) => updateReport({ bikou: v })}
         />
         <NumInput
           label="惣菜残(14時時点)"
           unit="点"
           value={report.sozai_zan}
-          onChange={(v) => saveReport({ sozai_zan: v })}
+          onChange={(v) => updateReport({ sozai_zan: v })}
         />
         <NumInput
           label="餅残"
           unit="点"
           value={report.mochi_zan}
-          onChange={(v) => saveReport({ mochi_zan: v })}
+          onChange={(v) => updateReport({ mochi_zan: v })}
         />
       </Section>
 
-      {/* 本部注文 */}
-      <Section label="本部への注文" title="明日の注文票">
-        <div
-          className={!hasReportInput ? 'pointer-events-none opacity-40 select-none' : ''}
-          aria-disabled={!hasReportInput}
-        >
-        {products.map((p) => (
-          <OrderRow
-            key={`p-${p.id}`}
-            name={p.name}
-            qty={orders[p.id] || 0}
-            onChange={(v) => setOrderQty(p.id, v)}
-          />
-        ))}
-        {extras.map((x) => (
-          <OrderRow
-            key={`x-${x.id}`}
-            name={`${x.name}  〔臨時〕`}
-            qty={x.planned_qty}
-            onChange={(v) => setExtraQty(x.id, v)}
-            onDelete={() => deleteExtra(x.id)}
-          />
-        ))}
-
-        <div className="mt-4 p-3 bg-paper2 border-2 border-dashed border-ink">
-          <b className="font-mincho block mb-2 text-sm">＋ 臨時アイテムを追加</b>
-          <p className="text-[11px] text-muted font-mono mb-2">※ 本日限り。翌日には引き継がれません</p>
-          <div className="flex gap-2">
-            <input
-              placeholder="商品名"
-              value={newExtraName}
-              onChange={(e) => setNewExtraName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  addExtra();
-                }
-              }}
-              className="flex-1 p-2 border-2 border-ink bg-paper text-sm"
-            />
-            <button
-              onClick={addExtra}
-              className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm"
-            >
-              追加
-            </button>
+      {/* 画面下部に固定保存ボタン */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 bg-paper border-t-2 border-ink shadow-[0_-4px_0_rgba(26,24,20,0.1)]">
+        <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="flex-1 text-xs">
+            {isDirty ? (
+              <span className="font-bold text-accent flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
+                未保存の変更があります
+              </span>
+            ) : savedAt ? (
+              <span className="text-muted font-mono">最終保存 {savedAt}</span>
+            ) : (
+              <span className="text-muted">未入力</span>
+            )}
           </div>
+          <button
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className={`px-6 py-3 border-2 border-ink font-mincho font-extrabold text-base tracking-wider transition-all ${
+              saving
+                ? 'bg-stone-400 text-paper'
+                : isDirty
+                ? 'bg-accent text-paper shadow-inkSm active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'
+                : 'bg-stone-200 text-stone-500'
+            }`}
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
         </div>
-        </div>
-      </Section>
-
-     
-      <div className="p-4 bg-ink text-paper text-center font-mincho text-sm font-bold tracking-widest">
-        自動保存されています
-        <small className="block font-mono text-[10px] opacity-70 mt-1 tracking-widest">
-          SALES / HOURS = 人時売
-        </small>
       </div>
     </div>
   );
