@@ -62,14 +62,8 @@ export type ShiftEntry = {
 export type OrderLine = {
   id: number;
   daily_report_id: number;
-  product_id: number;
+  product_id: number | null;
+  item_name_manual: string | null;
   planned_qty: number;
   actual_qty: number;
-};
-
-export type OrderExtra = {
-  id: number;
-  daily_report_id: number;
-  name: string;
-  planned_qty: number;
 };
