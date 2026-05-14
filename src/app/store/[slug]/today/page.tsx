@@ -330,6 +330,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         )}
       </div>
 
+      {/* 日報(一番上) */}
+      <Section label="日報" title="ひとこと">
+        <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
+      </Section>
+
       {/* 天気 */}
       <Section label="天気" hideTitle>
         <WeatherPicker value={report.weather} onChange={(v) => updateReport({ weather: v })} />
@@ -451,21 +456,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         </div>
       </Section>
 
-      {/* 本部注文 */}
-      <Section label="本部への注文" title="明日の注文票">
-        {products.map((p) => (
-          <OrderRow
-            key={p.id}
-            name={p.name}
-            qty={orders[p.id] || 0}
-            onChange={(v) => updateOrder(p.id, v)}
-          />
-        ))}
-      </Section>
-
-      {/* 日報 */}
-      <Section label="日報・気づき" title="ひとこと">
-        <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
+      {/* 気づき・残数(シフトの下) */}
+      <Section label="気づき・残数" title="記録">
         <TextArea label="気づき" value={report.kizuki} onChange={(v) => updateReport({ kizuki: v })} />
         <TextArea
           label="惣菜残・餅残・備考"
@@ -484,6 +476,18 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           value={report.mochi_zan}
           onChange={(v) => updateReport({ mochi_zan: v })}
         />
+      </Section>
+
+      {/* 本部注文(一番下) */}
+      <Section label="本部への注文" title="明日の注文票">
+        {products.map((p) => (
+          <OrderRow
+            key={p.id}
+            name={p.name}
+            qty={orders[p.id] || 0}
+            onChange={(v) => updateOrder(p.id, v)}
+          />
+        ))}
       </Section>
 
       {/* 画面下部に固定保存ボタン */}
