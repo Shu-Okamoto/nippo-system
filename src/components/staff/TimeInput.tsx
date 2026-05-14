@@ -3,15 +3,8 @@ import { useState, useEffect } from 'react';
 
 // HH:MM形式に正規化できるか試みる
 function tryNormalize(s: string): string | null {
-  // 数字のみ入力を許容(例: 900 → 09:00, 1300 → 13:00)
+  // 数字4桁のみ入力(例: 0900 → 09:00, 1300 → 13:00)
   const digits = s.replace(/[^\d]/g, '');
-  if (digits.length === 3) {
-    const h = Number(digits.slice(0, 1));
-    const m = Number(digits.slice(1));
-    if (h >= 0 && h <= 9 && m >= 0 && m <= 59) {
-      return `0${h}:${String(m).padStart(2, '0')}`;
-    }
-  }
   if (digits.length === 4) {
     const h = Number(digits.slice(0, 2));
     const m = Number(digits.slice(2));
