@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import React from 'react';
+import path from 'path';
 import {
   Document,
   Page,
@@ -14,14 +15,15 @@ import {
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// 日本語フォント(Google FontsのNoto Serif JP)
+// 日本語フォント(public/fonts/ に同梱したファイルを参照)
+// ※ 外部URLは404や障害のリスクがあるため同梱方式にしている
 Font.register({
-  family: 'NotoSerifJP',
-  src: 'https://fonts.gstatic.com/ea/notoserifjp/v6/NotoSerifJP-Bold.otf',
+  family: 'NotoSansJP',
+  src: path.join(process.cwd(), 'public', 'fonts', 'BIZUDPGothic-Regular.ttf'),
 });
 
 const styles = StyleSheet.create({
-  page: { padding: 36, fontFamily: 'NotoSerifJP', fontSize: 11 },
+  page: { padding: 36, fontFamily: 'NotoSansJP', fontSize: 11 },
   title: { fontSize: 18, textAlign: 'center', paddingBottom: 10, marginBottom: 14, borderBottom: 2, borderColor: '#000' },
   meta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14, fontSize: 10 },
   table: { borderTop: 1, borderLeft: 1, borderColor: '#000' },
