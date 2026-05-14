@@ -24,7 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div>
-      <header className="border-b-2 border-ink bg-paper px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <header className="no-print border-b-2 border-ink bg-paper px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-6">
           <Link href="/" className="font-mincho text-lg font-extrabold">日報システム</Link>
           <nav className="flex gap-1 text-sm font-bold">
