@@ -13,3 +13,49 @@ html, body {
 * { box-sizing: border-box; }
 
 input:focus, textarea:focus, select:focus { outline: none; background: #fff8e8; }
+
+/* ===== 印刷用 ===== */
+/* 通常時は print-only を隠す */
+.print-only { display: none; }
+
+@media print {
+  /* 背景色を白に、画面の余白を詰める */
+  html, body {
+    background: #fff;
+  }
+
+  /* 操作系(日付ピッカー・ボタン・ナビ)は印刷しない */
+  .no-print { display: none !important; }
+
+  /* 印刷時のみ表示する要素 */
+  .print-only { display: block; }
+
+  /* 印刷エリアの余白を詰めて1枚に収める */
+  .print-area {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* 店舗カードがページ途中で分断されないように */
+  .store-card-print {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 全体のフォントを少し小さくして2店舗分を1枚に */
+  .print-area {
+    font-size: 11px;
+  }
+
+  /* A4縦・余白控えめ */
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  /* 影は印刷で意味がないので消す */
+  .print-area * {
+    box-shadow: none !important;
+  }
+}
+
