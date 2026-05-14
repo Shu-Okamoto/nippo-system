@@ -94,13 +94,13 @@ export default function DashboardPage() {
   const overallNinjibai = totalHrs > 0 ? Math.round(totalSales / totalHrs) : null;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto print-area">
       <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
         <div>
           <h1 className="font-mincho text-3xl font-extrabold">本部ダッシュボード</h1>
           <p className="text-xs text-muted font-mono mt-1 tracking-wider">HQ · {date}</p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center no-print">
           <input
             type="date"
             value={date}
@@ -114,7 +114,20 @@ export default function DashboardPage() {
           >
             📄 注文票PDF出力
           </a>
+          <button
+            onClick={() => window.print()}
+            className="px-5 py-3 bg-ink text-paper border-2 border-ink font-mincho font-extrabold shadow-inkSm hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-ink transition-all"
+          >
+            🖨 印刷
+          </button>
         </div>
+      </div>
+
+      {/* 印刷時のみ表示される日付見出し */}
+      <div className="print-only mb-4">
+        <h2 className="font-mincho text-xl font-extrabold">
+          本部日報 — {date}
+        </h2>
       </div>
 
       {loading ? (
@@ -136,7 +149,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             rows.map((r) => (
-              <div key={r.daily_report_id} className="border-2 border-ink mb-4 bg-paper">
+              <div key={r.daily_report_id} className="store-card-print border-2 border-ink mb-4 bg-paper">
                 <div className="px-4 py-3 bg-ink text-paper flex items-center justify-between flex-wrap gap-2">
                   <h3 className="font-mincho text-lg font-extrabold">{r.store_name}</h3>
                   <div className="flex gap-2 text-xs">
