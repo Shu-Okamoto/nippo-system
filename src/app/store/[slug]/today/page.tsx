@@ -93,9 +93,16 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         .order('sort_order');
       setProducts(prodData || []);
 
-      const { data: todayData } = await supabase.rpc('get_today_report', { p_slug: slug });
-      if (todayData && todayData.length > 0) {
-        const r = todayData[0];
+      // 日報・シフト・注文を一括取得(RPC経由でRLSを貫通)
+      const { data: full, error: e2 } = await supabase.rpc('get_today_full', { p_slug: slug });
+      if (e2) {
+        setError(e2.message);
+        setLoading(false);
+        return;
+      }
+
+      if (full && full.has_report && full.report) {
+        const r = full.report;
         setReport({
           weather: r.weather,
           sales_forecast: r.sales_forecast,
@@ -108,35 +115,23 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           bikou: r.bikou || '',
         });
 
-        const { data: shiftData } = await supabase
-          .from('shift_entries')
-          .select('*')
-          .eq('daily_report_id', r.report_id)
-          .order('id');
-        setShifts(shiftData || []);
+        // シフト(RPCがjsonb配列で返す)
+        setShifts((full.shifts || []) as LocalShift[]);
 
-        const { data: orderData } = await supabase
-          .from('order_lines')
-          .select('*')
-          .eq('daily_report_id', r.report_id);
+        // 注文(product_id => planned_qty のマップに変換)
         const orderMap: Record<number, number> = {};
-        (orderData || []).forEach((o: any) => {
+        ((full.orders || []) as any[]).forEach((o) => {
           orderMap[o.product_id] = o.planned_qty;
         });
         setOrders(orderMap);
 
-        if (r.report_id) {
-          const { data: lastSaved } = await supabase
-            .from('daily_reports')
-            .select('updated_at')
-            .eq('id', r.report_id)
-            .single();
-          if (lastSaved?.updated_at) {
-            const d = new Date(lastSaved.updated_at);
-            setSavedAt(d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-          }
+        // 保存時刻表示
+        if (r.updated_at) {
+          const d = new Date(r.updated_at);
+          setSavedAt(d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
         }
       } else {
+        // 日報がまだ無い
         setShifts([]);
         setOrders({});
       }
