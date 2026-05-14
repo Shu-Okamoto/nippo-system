@@ -10,6 +10,7 @@ import { OrderRow } from '@/components/staff/OrderRow';
 import { ShiftRow } from '@/components/staff/ShiftRow';
 import { ShiftEditor } from '@/components/staff/ShiftEditor';
 import { AddStaffRow } from '@/components/staff/AddStaffRow';
+import { AddOrderRow } from '@/components/staff/AddOrderRow';
 
 type ReportState = {
   weather: Weather | null;
@@ -24,6 +25,14 @@ type ReportState = {
 };
 
 type LocalShift = ShiftEntry;
+
+// 注文行(マスタ商品 or 臨時商品)
+type LocalOrder = {
+  rowId: number; // 画面内の一意キー
+  product_id: number | null;
+  item_name_manual: string | null;
+  planned_qty: number;
+};
 
 let localIdCounter = -1;
 function nextLocalId(): number {
@@ -49,7 +58,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     bikou: '',
   });
   const [shifts, setShifts] = useState<LocalShift[]>([]);
-  const [orders, setOrders] = useState<Record<number, number>>({});
+  const [orders, setOrders] = useState<LocalOrder[]>([]);
 
   const [shiftTab, setShiftTab] = useState<EntryType>('actual');
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
@@ -118,12 +127,14 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         // シフト(RPCがjsonb配列で返す)
         setShifts((full.shifts || []) as LocalShift[]);
 
-        // 注文(product_id => planned_qty のマップに変換)
-        const orderMap: Record<number, number> = {};
-        ((full.orders || []) as any[]).forEach((o) => {
-          orderMap[o.product_id] = o.planned_qty;
-        });
-        setOrders(orderMap);
+        // 注文(マスタ商品・臨時商品どちらも配列で保持)
+        const loadedOrders: LocalOrder[] = ((full.orders || []) as any[]).map((o) => ({
+          rowId: nextLocalId(),
+          product_id: o.product_id ?? null,
+          item_name_manual: o.item_name_manual ?? null,
+          planned_qty: o.planned_qty,
+        }));
+        setOrders(loadedOrders);
 
         // 保存時刻表示
         if (r.updated_at) {
@@ -133,7 +144,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       } else {
         // 日報がまだ無い
         setShifts([]);
-        setOrders({});
+        setOrders([]);
       }
       setIsDirty(false);
     } catch (e: any) {
@@ -215,8 +226,55 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     markDirty();
   };
 
-  const updateOrder = (productId: number, qty: number) => {
-    setOrders((prev) => ({ ...prev, [productId]: qty }));
+  // 注文: マスタ商品を追加
+  const addOrderFromMaster = (productId: number) => {
+    // 既に追加済みなら何もしない
+    if (orders.some((o) => o.product_id === productId)) return;
+    setOrders((prev) => [
+      ...prev,
+      { rowId: nextLocalId(), product_id: productId, item_name_manual: null, planned_qty: 1 },
+    ]);
+    markDirty();
+  };
+
+  // 注文: 臨時商品を追加(registerToMaster=true なら商品マスタにも登録)
+  const addOrderManual = async (name: string, registerToMaster: boolean) => {
+    if (registerToMaster) {
+      // 商品マスタに登録 → products を再取得 → マスタ商品として追加
+      const maxSort = Math.max(0, ...products.map((p) => p.sort_order));
+      const { data: newProduct, error: e } = await supabase
+        .from('products')
+        .insert({ name, category: 'その他', sort_order: maxSort + 1 })
+        .select()
+        .single();
+      if (e) {
+        setError(e.message);
+        return;
+      }
+      setProducts((prev) => [...prev, newProduct as Product]);
+      setOrders((prev) => [
+        ...prev,
+        { rowId: nextLocalId(), product_id: newProduct.id, item_name_manual: null, planned_qty: 1 },
+      ]);
+    } else {
+      // 今回だけの臨時商品
+      setOrders((prev) => [
+        ...prev,
+        { rowId: nextLocalId(), product_id: null, item_name_manual: name, planned_qty: 1 },
+      ]);
+    }
+    markDirty();
+  };
+
+  // 注文: 数量変更
+  const updateOrderQty = (rowId: number, qty: number) => {
+    setOrders((prev) => prev.map((o) => (o.rowId === rowId ? { ...o, planned_qty: qty } : o)));
+    markDirty();
+  };
+
+  // 注文: 行削除
+  const removeOrder = (rowId: number) => {
+    setOrders((prev) => prev.filter((o) => o.rowId !== rowId));
     markDirty();
   };
 
@@ -240,11 +298,12 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         break_end: s.break_end,
       }));
 
-      const ordersPayload = Object.entries(orders)
-        .filter(([, qty]) => qty > 0)
-        .map(([pid, qty]) => ({
-          product_id: Number(pid),
-          planned_qty: qty,
+      const ordersPayload = orders
+        .filter((o) => o.planned_qty > 0)
+        .map((o) => ({
+          product_id: o.product_id,
+          item_name_manual: o.item_name_manual,
+          planned_qty: o.planned_qty,
         }));
 
       const { error: e } = await supabase.rpc('save_daily_report_full', {
@@ -480,14 +539,40 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 本部注文(一番下) */}
       <Section label="本部への注文" title="明日の注文票">
-        {products.map((p) => (
-          <OrderRow
-            key={p.id}
-            name={p.name}
-            qty={orders[p.id] || 0}
-            onChange={(v) => updateOrder(p.id, v)}
+        <div className="border-2 border-ink bg-paper">
+          {orders.length === 0 ? (
+            <div className="p-4 text-center text-xs text-muted font-mono">
+              ↓ 注文する商品を追加してください
+            </div>
+          ) : (
+            <div className="px-3">
+              {orders.map((o) => {
+                const master = o.product_id
+                  ? products.find((p) => p.id === o.product_id)
+                  : null;
+                const name = master ? master.name : o.item_name_manual || '(不明)';
+                return (
+                  <OrderRow
+                    key={o.rowId}
+                    name={name}
+                    qty={o.planned_qty}
+                    isManual={o.product_id === null}
+                    onChange={(v) => updateOrderQty(o.rowId, v)}
+                    onDelete={() => removeOrder(o.rowId)}
+                  />
+                );
+              })}
+            </div>
+          )}
+          <AddOrderRow
+            products={products}
+            usedProductIds={orders
+              .map((o) => o.product_id)
+              .filter((x): x is number => x !== null)}
+            onAddFromMaster={addOrderFromMaster}
+            onAddManual={addOrderManual}
           />
-        ))}
+        </div>
       </Section>
 
       {/* 画面下部に固定保存ボタン */}
