@@ -3,6 +3,12 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatJpy } from '@/lib/calc';
 
+type OrderItem = {
+  name: string;
+  planned_qty: number;
+  is_manual: boolean;
+};
+
 type DashRow = {
   daily_report_id: number;
   store_id: number;
@@ -17,7 +23,7 @@ type DashRow = {
   weather?: string | null;
   report_text?: string | null;
   kizuki?: string | null;
-  extras?: { id: number; name: string; planned_qty: number }[];
+  orders?: OrderItem[];
 };
 
 const WEATHER_LABEL: Record<string, string> = {
@@ -46,27 +52,36 @@ export default function DashboardPage() {
         .select('id, weather, report_text, kizuki, store_id, stores(name)')
         .eq('report_date', date);
 
-      const reportIds = (reports || []).map((r: any) => r.id);
-      const { data: extraRows } = reportIds.length
+      // 注文明細(本部ログイン済みなので直接SELECT可)
+      const reportIds = (reports || []).map((r) => r.id);
+      const { data: orderLines } = reportIds.length
         ? await supabase
-            .from('daily_order_extras')
-            .select('id, daily_report_id, name, planned_qty')
+            .from('order_lines')
+            .select('daily_report_id, product_id, item_name_manual, planned_qty, products(name, sort_order)')
             .in('daily_report_id', reportIds)
-            .order('id')
-        : { data: [] as any[] };
+        : { data: [] };
 
       const merged: DashRow[] = (kpi || []).map((k) => {
         const r = (reports || []).find((x) => x.id === k.daily_report_id) as any;
-        const ex = (extraRows || [])
-          .filter((e: any) => e.daily_report_id === k.daily_report_id)
-          .map((e: any) => ({ id: e.id, name: e.name, planned_qty: e.planned_qty }));
+        // この日報の注文を整形(マスタ商品はマスタ順、臨時商品は末尾)
+        const orders: OrderItem[] = ((orderLines || []) as any[])
+          .filter((o) => o.daily_report_id === k.daily_report_id)
+          .map((o) => ({
+            name: o.product_id ? o.products?.name || '(不明)' : o.item_name_manual || '(不明)',
+            planned_qty: o.planned_qty,
+            is_manual: o.product_id === null,
+            sort_key: o.product_id ? o.products?.sort_order ?? 9999 : 9999,
+          }))
+          .sort((a, b) => a.sort_key - b.sort_key)
+          .map(({ name, planned_qty, is_manual }) => ({ name, planned_qty, is_manual }));
+
         return {
           ...k,
           store_name: r?.stores?.name,
           weather: r?.weather,
           report_text: r?.report_text,
           kizuki: r?.kizuki,
-          extras: ex,
+          orders,
         };
       });
       setRows(merged);
@@ -153,19 +168,32 @@ export default function DashboardPage() {
                     )}
                   </div>
                 )}
-                {r.extras && r.extras.length > 0 && (
-                  <div className="border-t border-dashed border-ink p-4 text-sm">
-                    <b className="font-mincho text-accent mr-2 block mb-2">臨時アイテム</b>
-                    <ul className="font-mono text-xs space-y-1">
-                      {r.extras.map((e) => (
-                        <li key={e.id} className="flex justify-between border-b border-dashed border-ink/30 pb-1">
-                          <span>{e.name}</span>
-                          <span className="font-bold">{e.planned_qty}</span>
-                        </li>
+                {/* 本部への注文 */}
+                <div className="border-t border-dashed border-ink p-4">
+                  <b className="font-mincho text-accent text-sm block mb-2">本部への注文</b>
+                  {r.orders && r.orders.length > 0 ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">
+                      {r.orders.map((o, i) => (
+                        <div
+                          key={i}
+                          className="flex items-baseline justify-between border-b border-dotted border-stone-300 pb-0.5 text-sm"
+                        >
+                          <span className="flex items-center gap-1">
+                            {o.name}
+                            {o.is_manual && (
+                              <span className="text-[9px] font-bold px-1 border border-ink bg-amber-100 font-mono">
+                                臨時
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono font-bold">{o.planned_qty}</span>
+                        </div>
                       ))}
-                    </ul>
-                  </div>
-                )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted font-mono">注文なし</span>
+                  )}
+                </div>
               </div>
             ))
           )}
