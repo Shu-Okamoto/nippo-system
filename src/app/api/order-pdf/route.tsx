@@ -98,47 +98,33 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // 全店舗の当日日報
-  const { data: reports } = await supabase
-    .from('daily_reports')
-    .select('id, store_id, stores(name)')
-    .eq('report_date', date);
+  // 指定日の全店舗の注文をRPC経由で取得(RLSを貫通)
+  const { data: storeData, error } = await supabase.rpc('get_orders_for_pdf', {
+    p_date: date,
+  });
 
-  if (!reports || reports.length === 0) {
+  if (error) {
+    return new NextResponse(`取得エラー: ${error.message}`, { status: 500 });
+  }
+
+  const stores = (storeData || []) as {
+    store_name: string;
+    items: { name: string; planned_qty: number; is_manual: boolean; sort_key: number }[];
+  }[];
+
+  if (stores.length === 0) {
     return new NextResponse('当日の日報がありません', { status: 404 });
   }
 
-  // 商品マスタ(名前解決用)
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, name, sort_order');
-
-  const { data: orderLines } = await supabase
-    .from('order_lines')
-    .select('daily_report_id, product_id, item_name_manual, planned_qty')
-    .in('daily_report_id', reports.map((r) => r.id));
-
-  const productMap = new Map((products || []).map((p) => [p.id, p]));
-
-  const rows: Row[] = reports.map((r) => {
-    // この日報の注文行(マスタ商品 + 臨時商品)
-    const lines = (orderLines || []).filter((o) => o.daily_report_id === r.id);
-    const items = lines
-      .map((o) => {
-        const master = o.product_id ? productMap.get(o.product_id) : null;
-        const name = master ? master.name : o.item_name_manual || '(不明)';
-        const sortKey = master ? master.sort_order : 9999; // 臨時商品は末尾
-        const isManual = o.product_id === null;
-        return { name, planned_qty: o.planned_qty, sortKey, isManual };
-      })
-      .sort((a, b) => a.sortKey - b.sortKey)
-      .map(({ name, planned_qty, isManual }) => ({ name, planned_qty, isManual }));
-    return {
-      store_name: (r.stores as any)?.name || `店舗${r.store_id}`,
-      date,
-      items,
-    };
-  });
+  const rows: Row[] = stores.map((s) => ({
+    store_name: s.store_name,
+    date,
+    items: s.items.map((it) => ({
+      name: it.name || '(不明)',
+      planned_qty: it.planned_qty,
+      isManual: it.is_manual,
+    })),
+  }));
 
   const buf = await renderToBuffer(<OrderPdf rows={rows} date={date} />);
 
