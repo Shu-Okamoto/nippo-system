@@ -14,12 +14,10 @@ import {
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// 日本語フォント(Google FontsのNoto Serif JP Bold, weight 700)
-// 注意: URL末尾のハッシュはGoogle Fontsのバージョン更新で変わる。404になったら
-// https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@700&subset=japanese&display=swap から再取得すること
+// 日本語フォント(Google FontsのNoto Serif JP)
 Font.register({
   family: 'NotoSerifJP',
-  src: 'https://fonts.gstatic.com/s/notoserifjp/v33/xn71YHs72GKoTvER4Gn3b5eMRtWGkp6o7MjQ2bzWPebA.ttf',
+  src: 'https://fonts.gstatic.com/ea/notoserifjp/v6/NotoSerifJP-Bold.otf',
 });
 
 const styles = StyleSheet.create({
@@ -39,7 +37,7 @@ const styles = StyleSheet.create({
 type Row = {
   store_name: string;
   date: string;
-  items: { name: string; planned_qty: number }[];
+  items: { name: string; planned_qty: number; isManual: boolean }[];
 };
 
 function OrderPdf({ rows, date }: { rows: Row[]; date: string }) {
@@ -59,15 +57,24 @@ function OrderPdf({ rows, date }: { rows: Row[]; date: string }) {
               <Text style={styles.cellQty}>予定</Text>
               <Text style={styles.cellQtyLast}>実績</Text>
             </View>
-            {r.items.map((it, i) => (
-              <View key={i} style={styles.row}>
-                <Text style={[styles.cellName, it.planned_qty === 0 ? styles.zero : {}]}>{it.name}</Text>
-                <Text style={[styles.cellQty, it.planned_qty === 0 ? styles.zero : {}]}>
-                  {it.planned_qty}
-                </Text>
+            {r.items.length === 0 ? (
+              <View style={styles.row}>
+                <Text style={[styles.cellName, styles.zero]}>(注文なし)</Text>
+                <Text style={[styles.cellQty, styles.zero]}>—</Text>
                 <Text style={styles.cellQtyLast}>—</Text>
               </View>
-            ))}
+            ) : (
+              r.items.map((it, i) => (
+                <View key={i} style={styles.row}>
+                  <Text style={styles.cellName}>
+                    {it.name}
+                    {it.isManual ? '（臨時）' : ''}
+                  </Text>
+                  <Text style={styles.cellQty}>{it.planned_qty}</Text>
+                  <Text style={styles.cellQtyLast}>—</Text>
+                </View>
+              ))
+            )}
           </View>
           <Text style={styles.footer}>DAILY-REPORT-SYS / {date}</Text>
         </Page>
@@ -86,17 +93,9 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
 
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey) {
-    return new NextResponse(
-      'サーバー設定エラー: SUPABASE_SERVICE_ROLE_KEY が未設定です',
-      { status: 500 }
-    );
-  }
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceKey,
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
   // 全店舗の当日日報
@@ -109,40 +108,35 @@ export async function GET(req: NextRequest) {
     return new NextResponse('当日の日報がありません', { status: 404 });
   }
 
-  // 商品マスタ(取扱中、並び順)
+  // 商品マスタ(名前解決用)
   const { data: products } = await supabase
     .from('products')
-    .select('id, name, sort_order')
-    .eq('is_active', true)
-    .order('sort_order');
-
-  const reportIds = reports.map((r) => r.id);
+    .select('id, name, sort_order');
 
   const { data: orderLines } = await supabase
     .from('order_lines')
-    .select('daily_report_id, product_id, planned_qty')
-    .in('daily_report_id', reportIds);
+    .select('daily_report_id, product_id, item_name_manual, planned_qty')
+    .in('daily_report_id', reports.map((r) => r.id));
 
-  const { data: extras } = await supabase
-    .from('daily_order_extras')
-    .select('daily_report_id, name, planned_qty')
-    .in('daily_report_id', reportIds)
-    .order('id');
+  const productMap = new Map((products || []).map((p) => [p.id, p]));
 
   const rows: Row[] = reports.map((r) => {
-    const items = (products || []).map((p) => {
-      const ol = (orderLines || []).find(
-        (o) => o.daily_report_id === r.id && o.product_id === p.id
-      );
-      return { name: p.name, planned_qty: ol?.planned_qty || 0 };
-    });
-    const extraItems = (extras || [])
-      .filter((x) => x.daily_report_id === r.id)
-      .map((x) => ({ name: `${x.name}（臨時）`, planned_qty: x.planned_qty }));
+    // この日報の注文行(マスタ商品 + 臨時商品)
+    const lines = (orderLines || []).filter((o) => o.daily_report_id === r.id);
+    const items = lines
+      .map((o) => {
+        const master = o.product_id ? productMap.get(o.product_id) : null;
+        const name = master ? master.name : o.item_name_manual || '(不明)';
+        const sortKey = master ? master.sort_order : 9999; // 臨時商品は末尾
+        const isManual = o.product_id === null;
+        return { name, planned_qty: o.planned_qty, sortKey, isManual };
+      })
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ name, planned_qty, isManual }) => ({ name, planned_qty, isManual }));
     return {
       store_name: (r.stores as any)?.name || `店舗${r.store_id}`,
       date,
-      items: [...items, ...extraItems],
+      items,
     };
   });
 
