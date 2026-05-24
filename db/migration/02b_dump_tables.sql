@@ -89,16 +89,48 @@ ORDER BY c.relname;
 
 
 -- ============================================================
--- D) (任意)トリガ
+-- D-1) トリガが参照する関数(set_updated_at など)を nippo に作成
 -- ------------------------------------------------------------
--- pg_get_triggerdef も同様、クエリ本文には "CREATE TRIGGER" の
--- リテラルが無いので分割不要。
+-- pg_get_triggerdef は EXECUTE FUNCTION の関数をスキーマ修飾なしで
+-- 返すことがあるため、トリガ関数も先に nippo スキーマに作る必要がある。
+-- 出力結果(CREATE FUNCTION nippo.xxx ...)を移行先で実行。
 -- ============================================================
-SELECT
-  replace(pg_get_triggerdef(t.oid, true), 'public.', 'nippo.') || ';' AS ddl_text
+SELECT replace(pg_get_functiondef(p.oid), 'public.', 'nippo.') AS function_ddl
 FROM pg_trigger t
 JOIN pg_class c ON c.oid = t.tgrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_proc p ON p.oid = t.tgfoid
+WHERE n.nspname = 'public'
+  AND NOT t.tgisinternal
+  AND c.relname IN (
+    'stores','staff','products',
+    'daily_reports','shift_entries','order_lines'
+  )
+GROUP BY p.oid;
+
+
+-- ============================================================
+-- D-2) トリガ本体 — テーブル名/関数名に nippo スキーマを注入
+-- ------------------------------------------------------------
+-- pg_get_triggerdef はスキーマ修飾を省略するので、後段の replace で
+--   ON テーブル名     → ON nippo.テーブル名
+--   EXECUTE FUNCTION 関数名(  → EXECUTE FUNCTION nippo.関数名(
+-- を注入する。
+-- ============================================================
+SELECT
+  replace(
+    replace(
+      pg_get_triggerdef(t.oid, true),
+      ' ON ' || c.relname || ' ',
+      ' ON nippo.' || c.relname || ' '
+    ),
+    'EXECUTE FUNCTION ' || p.proname || '(',
+    'EXECUTE FUNCTION nippo.' || p.proname || '('
+  ) || ';' AS ddl_text
+FROM pg_trigger t
+JOIN pg_class c ON c.oid = t.tgrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_proc p ON p.oid = t.tgfoid
 WHERE n.nspname = 'public'
   AND NOT t.tgisinternal
   AND c.relname IN (
@@ -109,5 +141,5 @@ WHERE n.nspname = 'public'
 
 -- ============================================================
 -- 実行順序(移行先 SQL Editor 側):
---   A の結果 → B の結果 → C の結果 → D の結果
+--   A の結果 → B の結果 → C の結果 → D-1 の結果 → D-2 の結果
 -- ============================================================
