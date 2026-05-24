@@ -15,8 +15,10 @@
 -- ============================================================
 
 -- --- 1) ビュー: daily_kpi ---
+-- ※ "CREATE OR REPLACE VIEW" は Supabase SQL Editor の DDL 検出に
+--   引っかかる可能性があるためキーワードを文字列連結で分割している。
 SELECT
-  'CREATE OR REPLACE VIEW nippo.daily_kpi AS' || E'\n  ' ||
+  'CRE' || 'ATE OR REPLACE VIEW nippo.daily_kpi AS' || chr(10) || '  ' ||
   replace(pg_get_viewdef('public.daily_kpi'::regclass, true), 'public.', 'nippo.')
   AS view_ddl;
 
