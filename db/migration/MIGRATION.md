@@ -31,17 +31,26 @@ db/migration/01_target_init.sql
 
 ## 2. テーブル DDL を移行先で作成
 
-### 2-A. 推奨: 移行元の "Definition" タブからコピー
+### 2-A. 推奨: SQL Editor で本物の DDL を自動出力する
 
-1. 移行元 Dashboard → **Database → Tables** を開く
-2. 各テーブル(`stores`, `staff`, `products`, `daily_reports`, `shift_entries`, `order_lines`)を選択し、上部 **"Definition"** タブの CREATE TABLE 文をコピー
-3. テキストエディタで `public.` → `nippo.` に置換
-4. 移行先 SQL Editor に貼り付けて実行
+移行元 Dashboard → **SQL Editor** で `db/migration/02b_dump_tables.sql` を実行。
+結果として以下が一覧で出てきます(すべて `public.` → `nippo.` 置換済み):
 
-### 2-B. 雛形を使う場合
+1. `CREATE TABLE IF NOT EXISTS nippo.xxx (...)` × 6 テーブル
+2. `ALTER TABLE nippo.xxx ADD CONSTRAINT ...` (PK / UNIQUE / FK / CHECK)
+3. ユーザー定義インデックス
 
-`db/migration/03_schema_template.sql` をベースに不足分(インデックス・制約・トリガ・RLS)を追記して実行。
-**これはコードから推測した雛形なので、必ず 2-A で得た正本と突き合わせてください。**
+`ddl` カラムを上から順に全選択してコピー、移行先 SQL Editor に貼って実行。
+
+> **トリガが現行にある場合**: `02b_dump_tables.sql` 末尾の補足クエリでトリガ定義も
+> 取得できます。トリガが参照する関数は `02_dump_source.sql` で出る関数ダンプに
+> 含まれているか確認(無ければ関数名を WHERE 句に追加)。
+
+### 2-B. 雛形(参考)
+
+`db/migration/03_schema_template.sql` はコードから推測したテーブル雛形です。
+2-A が使えれば不要ですが、現行 DB に接続できない状況や、ゼロから組み直す場合の
+比較用に残しています。
 
 ---
 
