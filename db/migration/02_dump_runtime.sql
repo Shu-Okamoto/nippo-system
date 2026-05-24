@@ -18,10 +18,18 @@ FROM (
   -- (1) public スキーマの plpgsql / sql 関数を全部
   --     set_updated_at, shift_minutes, get_today_full,
   --     save_daily_report_full, add_product, get_orders_for_pdf 等
+  --
+  --     ※ 各関数の本体には未修飾のテーブル参照(例: from stores)が
+  --       あるので、関数定義に SET search_path を埋め込む ALTER 文を
+  --       直後に追加する。
   SELECT
     row_number() OVER (ORDER BY p.proname) AS ord,
     'SET search_path TO nippo, public;' || chr(10) || chr(10) ||
-    replace(pg_get_functiondef(p.oid), 'public.', 'nippo.')
+    replace(pg_get_functiondef(p.oid), 'public.', 'nippo.') ||
+    chr(10) || chr(10) ||
+    'ALT' || 'ER FUNCTION nippo.' || p.proname || '(' ||
+    pg_get_function_identity_arguments(p.oid) || ') ' ||
+    'SET search_path = nippo, public;'
     AS ddl_text
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
