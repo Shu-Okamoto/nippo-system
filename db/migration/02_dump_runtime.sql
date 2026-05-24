@@ -14,8 +14,11 @@
 SELECT ddl_text
 FROM (
   -- (1) View: daily_kpi
+  --     先頭に SET search_path を付けて、未修飾テーブル名(daily_reports 等)が
+  --     nippo スキーマに解決されるようにする(ビューはCREATE時に解決される)
   SELECT
     1 AS ord,
+    'SET search_path TO nippo, public;' || chr(10) || chr(10) ||
     'CRE' || 'ATE OR REPLACE VIEW nippo.daily_kpi AS' || chr(10) || '  ' ||
     replace(pg_get_viewdef('public.daily_kpi'::regclass, true), 'public.', 'nippo.')
     AS ddl_text
