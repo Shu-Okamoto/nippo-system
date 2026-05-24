@@ -160,6 +160,20 @@ CREATE TRIGGER trg_order_lines_updated
   FOR EACH ROW EXECUTE FUNCTION nippo.set_updated_at();
 
 
+-- ------------------------------------------------------------
+-- 4. RLS は無効(Phase 1: 店舗画面は未認証アクセス運用)
+-- ------------------------------------------------------------
+-- Supabase Dashboard は RLS 未設定のテーブルに警告を出すため
+-- 後から有効化されがちだが、現状の運用方針では無効が正しい。
+-- 認証必須にする場合は別途ポリシーを設計してから有効化する。
+ALTER TABLE nippo.stores         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE nippo.staff          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE nippo.products       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE nippo.daily_reports  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE nippo.shift_entries  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE nippo.order_lines    DISABLE ROW LEVEL SECURITY;
+
+
 -- ============================================================
 -- これでテーブル + トリガまで完成。
 -- 次は 03_dump_runtime.sql の出力(View + RPC)を移行先で実行。
