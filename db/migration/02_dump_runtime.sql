@@ -33,12 +33,15 @@ FROM (
 
   -- (2) View: daily_kpi
   --     関数の後に作成(daily_kpi は shift_minutes を参照しているため)
+  --     ※ to_regclass を使って、ビューが存在しない場合はエラーにせず
+  --       行を出さない(WHERE で除外)。
   SELECT
     1000 AS ord,
     'SET search_path TO nippo, public;' || chr(10) || chr(10) ||
     'CRE' || 'ATE OR REPLACE VIEW nippo.daily_kpi AS' || chr(10) || '  ' ||
-    replace(pg_get_viewdef('public.daily_kpi'::regclass, true), 'public.', 'nippo.')
+    replace(pg_get_viewdef(to_regclass('public.daily_kpi'), true), 'public.', 'nippo.')
     AS ddl_text
+  WHERE to_regclass('public.daily_kpi') IS NOT NULL
 ) x
 ORDER BY ord;
 
