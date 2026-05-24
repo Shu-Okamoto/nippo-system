@@ -1,49 +1,55 @@
 -- ============================================================
--- 現行(移行元)Supabase で実行 → 出力されたDDLをコピーして
--- 移行先で実行する
+-- 現行(移行元)Supabase の SQL Editor で実行
 -- ------------------------------------------------------------
--- 目的:
---   * 既存の public スキーマにある「ビュー」「関数(RPC)」の定義を
---     pg_get_*() で取り出す
---   * 出力結果の "public." を "nippo." に置換して 03_schema.sql に貼る
--- ------------------------------------------------------------
--- 注意:
---   * テーブル本体の CREATE TABLE 文は pg_get_tabledef が無いため
---     Dashboard → Database → Tables → 各テーブル → "Definition" タブ
---     から CREATE 文をコピーするのが確実(後述 MIGRATION.md 参照)。
---   * このスクリプトはビュー / 関数のみを対象にする。
+-- 出力: 単一の "ddl_text" 列が複数行で返る。
+--   行1   : nippo.daily_kpi の View 定義(CREATE OR REPLACE VIEW ...)
+--   行2〜5: RPC 関数定義 4 本(get_today_full / save_daily_report_full /
+--                              add_product / get_orders_for_pdf)
+--
+-- 使い方:
+--   各行の "ddl_text" セルをクリック → 全文表示 → コピー
+--   → 移行先 SQL Editor に貼って実行(順番は問わない、5回繰り返す)
 -- ============================================================
 
--- --- 1) ビュー: daily_kpi ---
--- ※ "CREATE OR REPLACE VIEW" は Supabase SQL Editor の DDL 検出に
---   引っかかる可能性があるためキーワードを文字列連結で分割している。
-SELECT
-  'CRE' || 'ATE OR REPLACE VIEW nippo.daily_kpi AS' || chr(10) || '  ' ||
-  replace(pg_get_viewdef('public.daily_kpi'::regclass, true), 'public.', 'nippo.')
-  AS view_ddl;
+SELECT ddl_text
+FROM (
+  -- (1) View: daily_kpi
+  SELECT
+    1 AS ord,
+    'CRE' || 'ATE OR REPLACE VIEW nippo.daily_kpi AS' || chr(10) || '  ' ||
+    replace(pg_get_viewdef('public.daily_kpi'::regclass, true), 'public.', 'nippo.')
+    AS ddl_text
 
--- --- 2) 関数(RPC): get_today_full / save_daily_report_full / add_product ---
-SELECT
-  replace(pg_get_functiondef(p.oid), 'public.', 'nippo.') AS function_ddl
-FROM pg_proc p
-JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public'
-  AND p.proname IN (
-    'get_today_full',
-    'save_daily_report_full',
-    'add_product',
-    'get_orders_for_pdf'
-  )
-ORDER BY p.proname;
+  UNION ALL
 
--- --- 3) RLS ポリシー一覧(参考) ---
--- 移行先で同じ RLS を貼り直すかどうかを判断する材料
-SELECT
-  schemaname, tablename, policyname, cmd, qual, with_check
-FROM pg_policies
-WHERE schemaname = 'public'
-  AND tablename IN (
-    'stores','staff','products',
-    'daily_reports','shift_entries','order_lines'
-  )
-ORDER BY tablename, policyname;
+  -- (2) RPC 関数 4本
+  SELECT
+    2,
+    replace(pg_get_functiondef(p.oid), 'public.', 'nippo.')
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname IN (
+      'get_today_full',
+      'save_daily_report_full',
+      'add_product',
+      'get_orders_for_pdf'
+    )
+) x
+ORDER BY ord;
+
+
+-- ============================================================
+-- (任意・参考用) 現行 RLS ポリシー一覧
+-- ------------------------------------------------------------
+-- 移行先で同じ RLS を貼り直すかは運用方針次第。必要なら下を
+-- コメントアウト解除して実行 → 内容を確認 → ポリシー定義を手で写す。
+-- ============================================================
+-- SELECT schemaname, tablename, policyname, cmd, qual, with_check
+-- FROM pg_policies
+-- WHERE schemaname = 'public'
+--   AND tablename IN (
+--     'stores','staff','products',
+--     'daily_reports','shift_entries','order_lines'
+--   )
+-- ORDER BY tablename, policyname;

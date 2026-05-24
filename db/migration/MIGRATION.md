@@ -29,13 +29,20 @@
 
 ## Step 2 — View と RPC を移行先に作成
 
-**移行元** SQL Editor で `02_dump_runtime.sql` を実行。出力された SQL を全選択コピーして **移行先** SQL Editor に貼って実行。
+**移行元** SQL Editor で `02_dump_runtime.sql` を実行。
 
-中身は:
+結果は **5 行・1 列**(`ddl_text`)のテーブルで返ります:
 
-- `nippo.daily_kpi` ビューの定義
-- RPC 関数 4本(`get_today_full`, `save_daily_report_full`, `add_product`, `get_orders_for_pdf`)
-- (参考)現行 RLS ポリシー一覧
+| 行 | 中身 |
+|---|---|
+| 1 | `CREATE OR REPLACE VIEW nippo.daily_kpi …` |
+| 2 | `CREATE FUNCTION nippo.add_product(…) …` |
+| 3 | `CREATE FUNCTION nippo.get_orders_for_pdf(…) …` |
+| 4 | `CREATE FUNCTION nippo.get_today_full(…) …` |
+| 5 | `CREATE FUNCTION nippo.save_daily_report_full(…) …` |
+
+**各行の `ddl_text` セルをクリック** → 全文表示 → コピー → **移行先** SQL Editor に貼って実行。
+これを 5 回繰り返す(順番は問わない)。
 
 ---
 
