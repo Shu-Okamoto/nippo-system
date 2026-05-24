@@ -15,6 +15,7 @@ function getClient(): SupabaseClient {
   }
   _client = createClient(url, anonKey, {
     auth: { persistSession: true, autoRefreshToken: true },
+    db: { schema: 'nippo' },
   });
   return _client;
 }
