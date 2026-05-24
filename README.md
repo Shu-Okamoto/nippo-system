@@ -4,12 +4,14 @@
 
 ---
 
+> **Note**: Phase 2 から DB を DXシステム側 Supabase プロジェクトの `nippo` スキーマに移行しました。手順は [`db/migration/MIGRATION.md`](db/migration/MIGRATION.md) を参照。
+
 ## 1. セットアップ手順(Windows)
 
 ### 1.1 Supabaseプロジェクトを用意
 
-1. [Supabase](https://supabase.com) で新規プロジェクト作成(Region: Tokyo)
-2. 左メニュー **SQL Editor** で `DB設計書_SQL一式.md` の 5.1〜5.5 を順番に実行
+1. DXシステム側 Supabase プロジェクトに `nippo` スキーマがある前提
+2. 既存プロジェクトから移行する場合は [`db/migration/MIGRATION.md`](db/migration/MIGRATION.md) に従う
 3. **Project Settings → API** から以下をメモ
    - Project URL
    - anon public key
