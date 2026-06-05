@@ -38,8 +38,8 @@ export type DailyReport = {
   sales_forecast: number | null;
   sales_actual: number | null;
   customer_count: number | null;
-  sozai_zan: number | null;
-  mochi_zan: number | null;
+  sozai_zan: string | null;
+  mochi_zan: string | null;
   report_text: string | null;
   kizuki: string | null;
   bikou: string | null;

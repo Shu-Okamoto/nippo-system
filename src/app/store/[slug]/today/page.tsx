@@ -17,8 +17,8 @@ type ReportState = {
   sales_forecast: number | null;
   sales_actual: number | null;
   customer_count: number | null;
-  sozai_zan: number | null;
-  mochi_zan: number | null;
+  sozai_zan: string;
+  mochi_zan: string;
   report_text: string;
   kizuki: string;
   bikou: string;
@@ -51,14 +51,19 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     sales_forecast: null,
     sales_actual: null,
     customer_count: null,
-    sozai_zan: null,
-    mochi_zan: null,
+    sozai_zan: '',
+    mochi_zan: '',
     report_text: '',
     kizuki: '',
     bikou: '',
   });
   const [shifts, setShifts] = useState<LocalShift[]>([]);
   const [orders, setOrders] = useState<LocalOrder[]>([]);
+
+  // dx."Sale" 由来の売上・客数(前年予測 / 当日実績 / 当日客数)
+  const [dxForecast, setDxForecast] = useState<number | null>(null);
+  const [dxActual, setDxActual] = useState<number | null>(null);
+  const [dxCustomerCount, setDxCustomerCount] = useState<number | null>(null);
 
   const [shiftTab, setShiftTab] = useState<EntryType>('actual');
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
@@ -117,8 +122,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           sales_forecast: r.sales_forecast,
           sales_actual: r.sales_actual,
           customer_count: r.customer_count,
-          sozai_zan: r.sozai_zan,
-          mochi_zan: r.mochi_zan,
+          sozai_zan: r.sozai_zan || '',
+          mochi_zan: r.mochi_zan || '',
           report_text: r.report_text || '',
           kizuki: r.kizuki || '',
           bikou: r.bikou || '',
@@ -146,6 +151,19 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         setShifts([]);
         setOrders([]);
       }
+
+      // dx.sale から「前年同曜日売上」と「当日売上」を取得
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: sales } = await supabase.rpc('get_dx_sales', {
+        p_store_slug: slug,
+        p_today: today,
+      });
+      setDxForecast(sales?.forecast != null ? Number(sales.forecast) : null);
+      setDxActual(sales?.actual != null ? Number(sales.actual) : null);
+      setDxCustomerCount(
+        sales?.customer_count != null ? Number(sales.customer_count) : null
+      );
+
       setIsDirty(false);
     } catch (e: any) {
       setError(e.message);
@@ -305,14 +323,29 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           planned_qty: o.planned_qty,
         }));
 
+      // 保存時にも dx.sale を最新で引き直して daily_reports に記録
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: latestSales } = await supabase.rpc('get_dx_sales', {
+        p_store_slug: slug,
+        p_today: today,
+      });
+      const latestForecast =
+        latestSales?.forecast != null ? Number(latestSales.forecast) : null;
+      const latestActual =
+        latestSales?.actual != null ? Number(latestSales.actual) : null;
+      const latestCustomerCount =
+        latestSales?.customer_count != null
+          ? Number(latestSales.customer_count)
+          : null;
+
       const { error: e } = await supabase.rpc('save_daily_report_full', {
         p_slug: slug,
         p_weather: report.weather,
-        p_sales_forecast: report.sales_forecast,
-        p_sales_actual: report.sales_actual,
-        p_customer_count: report.customer_count,
-        p_sozai_zan: report.sozai_zan,
-        p_mochi_zan: report.mochi_zan,
+        p_sales_forecast: latestForecast,
+        p_sales_actual: latestActual,
+        p_customer_count: latestCustomerCount,
+        p_sozai_zan: report.sozai_zan || null,
+        p_mochi_zan: report.mochi_zan || null,
         p_report_text: report.report_text || null,
         p_kizuki: report.kizuki || null,
         p_bikou: report.bikou || null,
@@ -337,10 +370,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   };
 
   // === 計算KPI ===
+  // 売上は dx.sale 由来の値を使用(入力フィールドではなくテーブル参照)
   const visibleShifts = shifts.filter((s) => s.entry_type === shiftTab);
   const totalH = totalHours(shifts);
-  const kpi = ninjibai(report.sales_actual, totalH);
-  const tanka = kyakuTanka(report.sales_actual, report.customer_count);
+  const kpi = ninjibai(dxActual, totalH);
+  const tanka = kyakuTanka(dxActual, dxCustomerCount);
 
   const getStaffName = (s: ShiftEntry): string => {
     if (s.staff_id) {
@@ -400,24 +434,12 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 売上 */}
       <Section label="売上" title="予測 → 実績">
-        <NumInput
-          label="売上予測(前年)"
-          unit="円"
-          value={report.sales_forecast}
-          onChange={(v) => updateReport({ sales_forecast: v })}
-        />
-        <NumInput
-          label="売上実績"
-          unit="円"
-          value={report.sales_actual}
-          onChange={(v) => updateReport({ sales_actual: v })}
-        />
-        <NumInput
-          label="客数"
-          unit="人"
-          value={report.customer_count}
-          onChange={(v) => updateReport({ customer_count: v })}
-        />
+        <p className="mb-3 text-xs font-bold text-accent">
+          ※野菜果物注文の売上実績から入力してください。
+        </p>
+        <ReadonlyAmount label="売上予測(前年)" value={dxForecast} unit="円" />
+        <ReadonlyAmount label="売上実績"       value={dxActual}   unit="円" />
+        <ReadonlyAmount label="客数"           value={dxCustomerCount} unit="人" />
         {tanka !== null && (
           <div className="mt-1 text-xs font-mono text-muted text-right">
             客単価 {formatJpy(tanka)}
@@ -502,7 +524,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           <div className="font-mincho text-xs font-bold text-muted tracking-wider">
             人時売
             <small className="block font-mono text-[10px] opacity-80 mt-0.5">
-              = {formatJpy(report.sales_actual)} ÷ {totalH.toFixed(1)}h
+              = {formatJpy(dxActual)} ÷ {totalH.toFixed(1)}h
             </small>
           </div>
           <div className="text-right">
@@ -518,21 +540,19 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       <Section label="気づき・残数" title="記録">
         <TextArea label="気づき" value={report.kizuki} onChange={(v) => updateReport({ kizuki: v })} />
         <TextArea
-          label="惣菜残・餅残・備考"
-          value={report.bikou}
-          onChange={(v) => updateReport({ bikou: v })}
-        />
-        <NumInput
           label="惣菜残(14時時点)"
-          unit="点"
           value={report.sozai_zan}
           onChange={(v) => updateReport({ sozai_zan: v })}
         />
-        <NumInput
+        <TextArea
           label="餅残"
-          unit="点"
           value={report.mochi_zan}
           onChange={(v) => updateReport({ mochi_zan: v })}
+        />
+        <TextArea
+          label="備考"
+          value={report.bikou}
+          onChange={(v) => updateReport({ bikou: v })}
         />
       </Section>
 
@@ -628,6 +648,28 @@ function Section({
         <h2 className="font-mincho text-xl font-extrabold mb-4 leading-tight">{title}</h2>
       )}
       {children}
+    </div>
+  );
+}
+
+function ReadonlyAmount({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+}) {
+  return (
+    <div className="mb-3">
+      <label className="block text-xs font-bold mb-1.5 text-muted">{label}</label>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 px-3 py-3 text-xl font-bold border-2 border-ink bg-paper2 font-mono text-right text-muted">
+          {value !== null ? Math.round(value).toLocaleString('ja-JP') : '—'}
+        </div>
+        <span className="text-sm font-bold text-muted min-w-[24px]">{unit}</span>
+      </div>
     </div>
   );
 }
