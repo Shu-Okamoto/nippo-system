@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Store, Staff, Product, ShiftEntry, Weather, EntryType, ShiftPattern } from '@/lib/types';
+import type { Store, Staff, Product, ShiftEntry, EntryType, ShiftPattern } from '@/lib/types';
 import { totalHours, ninjibai, kyakuTanka, formatJpy, shiftMinutes } from '@/lib/calc';
-import { WeatherPicker } from '@/components/staff/WeatherPicker';
 import { NumInput } from '@/components/staff/NumInput';
 import { OrderRow } from '@/components/staff/OrderRow';
 import { ShiftRow } from '@/components/staff/ShiftRow';
@@ -13,7 +12,6 @@ import { AddStaffRow } from '@/components/staff/AddStaffRow';
 import { AddOrderRow } from '@/components/staff/AddOrderRow';
 
 type ReportState = {
-  weather: Weather | null;
   sales_forecast: number | null;
   sales_actual: number | null;
   customer_count: number | null;
@@ -47,7 +45,6 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const [products, setProducts] = useState<Product[]>([]);
 
   const [report, setReport] = useState<ReportState>({
-    weather: null,
     sales_forecast: null,
     sales_actual: null,
     customer_count: null,
@@ -60,10 +57,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const [shifts, setShifts] = useState<LocalShift[]>([]);
   const [orders, setOrders] = useState<LocalOrder[]>([]);
 
-  // dx."Sale" 由来の売上・客数(前年予測 / 当日実績 / 当日客数)
+  // dx."Sale" 由来の売上・客数・天気(前年予測 / 当日実績 / 当日客数 / 当日天気)
   const [dxForecast, setDxForecast] = useState<number | null>(null);
   const [dxActual, setDxActual] = useState<number | null>(null);
   const [dxCustomerCount, setDxCustomerCount] = useState<number | null>(null);
+  const [dxWeather, setDxWeather] = useState<string | null>(null);
 
   const [shiftTab, setShiftTab] = useState<EntryType>('actual');
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
@@ -118,7 +116,6 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       if (full && full.has_report && full.report) {
         const r = full.report;
         setReport({
-          weather: r.weather,
           sales_forecast: r.sales_forecast,
           sales_actual: r.sales_actual,
           customer_count: r.customer_count,
@@ -163,6 +160,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       setDxCustomerCount(
         sales?.customer_count != null ? Number(sales.customer_count) : null
       );
+      setDxWeather(sales?.weather ?? null);
 
       setIsDirty(false);
     } catch (e: any) {
@@ -337,10 +335,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         latestSales?.customer_count != null
           ? Number(latestSales.customer_count)
           : null;
+      const latestWeather = (latestSales?.weather as string | null) ?? null;
 
       const { error: e } = await supabase.rpc('save_daily_report_full', {
         p_slug: slug,
-        p_weather: report.weather,
+        p_weather: latestWeather,
         p_sales_forecast: latestForecast,
         p_sales_actual: latestActual,
         p_customer_count: latestCustomerCount,
@@ -427,16 +426,12 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
       </Section>
 
-      {/* 天気 */}
-      <Section label="天気" hideTitle>
-        <WeatherPicker value={report.weather} onChange={(v) => updateReport({ weather: v })} />
-      </Section>
-
       {/* 売上 */}
       <Section label="売上" hideTitle>
         <p className="mb-3 text-xs font-bold text-accent">
           ※野菜果物注文の売上実績から入力してください。
         </p>
+        <ReadonlyText   label="天気"           value={dxWeather} />
         <ReadonlyAmount label="売上予測(前年)" value={dxForecast} unit="円" />
         <ReadonlyAmount label="売上実績"       value={dxActual}   unit="円" />
         <ReadonlyAmount label="客数"           value={dxCustomerCount} unit="人" />
@@ -537,7 +532,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       </Section>
 
       {/* 気づき・残数(シフトの下) */}
-      <Section label="気づき・残数" title="記録">
+      <Section label="気づき・残数" hideTitle>
         <TextArea label="気づき" value={report.kizuki} onChange={(v) => updateReport({ kizuki: v })} />
         <TextArea
           label="惣菜残(14時時点)"
@@ -648,6 +643,17 @@ function Section({
         <h2 className="font-mincho text-xl font-extrabold mb-4 leading-tight">{title}</h2>
       )}
       {children}
+    </div>
+  );
+}
+
+function ReadonlyText({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="mb-3">
+      <label className="block text-xs font-bold mb-1.5 text-muted">{label}</label>
+      <div className="px-3 py-3 text-xl font-bold border-2 border-ink bg-paper2 font-mono text-muted">
+        {value || '—'}
+      </div>
     </div>
   );
 }
