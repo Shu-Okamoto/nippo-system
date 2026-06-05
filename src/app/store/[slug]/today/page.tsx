@@ -60,9 +60,10 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const [shifts, setShifts] = useState<LocalShift[]>([]);
   const [orders, setOrders] = useState<LocalOrder[]>([]);
 
-  // dx.sale 由来の売上(前年予測 / 当日実績)
+  // dx."Sale" 由来の売上・客数(前年予測 / 当日実績 / 当日客数)
   const [dxForecast, setDxForecast] = useState<number | null>(null);
   const [dxActual, setDxActual] = useState<number | null>(null);
+  const [dxCustomerCount, setDxCustomerCount] = useState<number | null>(null);
 
   const [shiftTab, setShiftTab] = useState<EntryType>('actual');
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
@@ -159,6 +160,9 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       });
       setDxForecast(sales?.forecast != null ? Number(sales.forecast) : null);
       setDxActual(sales?.actual != null ? Number(sales.actual) : null);
+      setDxCustomerCount(
+        sales?.customer_count != null ? Number(sales.customer_count) : null
+      );
 
       setIsDirty(false);
     } catch (e: any) {
@@ -329,13 +333,17 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         latestSales?.forecast != null ? Number(latestSales.forecast) : null;
       const latestActual =
         latestSales?.actual != null ? Number(latestSales.actual) : null;
+      const latestCustomerCount =
+        latestSales?.customer_count != null
+          ? Number(latestSales.customer_count)
+          : null;
 
       const { error: e } = await supabase.rpc('save_daily_report_full', {
         p_slug: slug,
         p_weather: report.weather,
         p_sales_forecast: latestForecast,
         p_sales_actual: latestActual,
-        p_customer_count: report.customer_count,
+        p_customer_count: latestCustomerCount,
         p_sozai_zan: report.sozai_zan || null,
         p_mochi_zan: report.mochi_zan || null,
         p_report_text: report.report_text || null,
@@ -366,7 +374,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const visibleShifts = shifts.filter((s) => s.entry_type === shiftTab);
   const totalH = totalHours(shifts);
   const kpi = ninjibai(dxActual, totalH);
-  const tanka = kyakuTanka(dxActual, report.customer_count);
+  const tanka = kyakuTanka(dxActual, dxCustomerCount);
 
   const getStaffName = (s: ShiftEntry): string => {
     if (s.staff_id) {
@@ -426,14 +434,9 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 売上 */}
       <Section label="売上" title="予測 → 実績">
-        <ReadonlyAmount label="売上予測(前年)" value={dxForecast} />
-        <ReadonlyAmount label="売上実績" value={dxActual} />
-        <NumInput
-          label="客数"
-          unit="人"
-          value={report.customer_count}
-          onChange={(v) => updateReport({ customer_count: v })}
-        />
+        <ReadonlyAmount label="売上予測(前年)" value={dxForecast} unit="円" />
+        <ReadonlyAmount label="売上実績"       value={dxActual}   unit="円" />
+        <ReadonlyAmount label="客数"           value={dxCustomerCount} unit="人" />
         {tanka !== null && (
           <div className="mt-1 text-xs font-mono text-muted text-right">
             客単価 {formatJpy(tanka)}
@@ -646,7 +649,15 @@ function Section({
   );
 }
 
-function ReadonlyAmount({ label, value }: { label: string; value: number | null }) {
+function ReadonlyAmount({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+}) {
   return (
     <div className="mb-3">
       <label className="block text-xs font-bold mb-1.5 text-muted">{label}</label>
@@ -654,7 +665,7 @@ function ReadonlyAmount({ label, value }: { label: string; value: number | null 
         <div className="flex-1 px-3 py-3 text-xl font-bold border-2 border-ink bg-paper2 font-mono text-right text-muted">
           {value !== null ? Math.round(value).toLocaleString('ja-JP') : '—'}
         </div>
-        <span className="text-sm font-bold text-muted min-w-[24px]">円</span>
+        <span className="text-sm font-bold text-muted min-w-[24px]">{unit}</span>
       </div>
     </div>
   );

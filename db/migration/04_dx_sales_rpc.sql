@@ -1,12 +1,11 @@
 -- ============================================================
 -- nippo.get_dx_sales(p_store_slug, p_today)
 -- ------------------------------------------------------------
--- dx.sale から「前年の同日付に一番近い同曜日の売上」と「当日の売上」
--- を返す RPC。SECURITY DEFINER で動作するので、dx スキーマを
--- Exposed schemas に追加しなくても anon から呼べる。
---
--- 返り値: jsonb
---   { "forecast": <numeric|null>, "actual": <numeric|null> }
+-- dx."Sale" から以下を返す RPC(SECURITY DEFINER):
+--   * forecast      : 前年同日付の前後で一番近い同曜日の売上 (numeric)
+--   * actual        : 当日の売上                              (numeric)
+--   * customer_count: 当日の客数                              (int)
+-- いずれもデータが無ければ null。
 --
 -- 実行場所: 移行先(DX側) SQL Editor で1回
 -- ============================================================
@@ -26,8 +25,9 @@ DECLARE
   v_prev_year_date  date;
   v_forecast        numeric;
   v_actual          numeric;
+  v_customer_count  int;
 BEGIN
-  -- slug → dx.sale.storeId のマッピング(ハードコード)
+  -- slug → dx."Sale"."storeId" のマッピング(ハードコード)
   v_store_id := CASE p_store_slug
     WHEN 'nishi'  THEN 1
     WHEN 'minami' THEN 2
@@ -35,7 +35,11 @@ BEGIN
   END;
 
   IF v_store_id IS NULL THEN
-    RETURN jsonb_build_object('forecast', NULL, 'actual', NULL);
+    RETURN jsonb_build_object(
+      'forecast',       NULL,
+      'actual',         NULL,
+      'customer_count', NULL
+    );
   END IF;
 
   -- 「前年同日付の前後で一番近い同曜日」を計算
@@ -53,15 +57,16 @@ BEGIN
   WHERE "storeId"  = v_store_id
     AND "saleDate" = v_prev_year_date;
 
-  -- 当日の売上
-  SELECT amount INTO v_actual
+  -- 当日の売上 + 客数
+  SELECT amount, "customerCount" INTO v_actual, v_customer_count
   FROM dx."Sale"
   WHERE "storeId"  = v_store_id
     AND "saleDate" = p_today;
 
   RETURN jsonb_build_object(
-    'forecast', v_forecast,
-    'actual',   v_actual
+    'forecast',       v_forecast,
+    'actual',         v_actual,
+    'customer_count', v_customer_count
   );
 END;
 $func$;
