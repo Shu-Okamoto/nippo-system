@@ -434,6 +434,9 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 売上 */}
       <Section label="売上" title="予測 → 実績">
+        <p className="mb-3 text-xs font-bold text-accent">
+          ※野菜果物注文の売上実績から入力してください。
+        </p>
         <ReadonlyAmount label="売上予測(前年)" value={dxForecast} unit="円" />
         <ReadonlyAmount label="売上実績"       value={dxActual}   unit="円" />
         <ReadonlyAmount label="客数"           value={dxCustomerCount} unit="人" />
