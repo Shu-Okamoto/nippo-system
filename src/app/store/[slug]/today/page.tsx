@@ -433,7 +433,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       </Section>
 
       {/* 売上 */}
-      <Section label="売上" title="予測 → 実績">
+      <Section label="売上" hideTitle>
         <p className="mb-3 text-xs font-bold text-accent">
           ※野菜果物注文の売上実績から入力してください。
         </p>
