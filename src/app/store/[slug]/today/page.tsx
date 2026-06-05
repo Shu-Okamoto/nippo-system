@@ -426,22 +426,6 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
       </Section>
 
-      {/* 売上 */}
-      <Section label="売上" hideTitle>
-        <p className="mb-3 text-xs font-bold text-accent">
-          ※野菜果物注文の売上実績から入力してください。
-        </p>
-        <ReadonlyText   label="天気"           value={dxWeather} />
-        <ReadonlyAmount label="売上予測(前年)" value={dxForecast} unit="円" />
-        <ReadonlyAmount label="売上実績"       value={dxActual}   unit="円" />
-        <ReadonlyAmount label="客数"           value={dxCustomerCount} unit="人" />
-        {tanka !== null && (
-          <div className="mt-1 text-xs font-mono text-muted text-right">
-            客単価 {formatJpy(tanka)}
-          </div>
-        )}
-      </Section>
-
       {/* シフト */}
       <Section label="ワークスケジュール" title="シフト">
         <div className="flex border-2 border-ink mb-3">
@@ -529,6 +513,22 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
             </div>
           </div>
         </div>
+      </Section>
+
+      {/* 売上 */}
+      <Section label="売上" hideTitle>
+        <p className="mb-3 text-xs font-bold text-accent">
+          ※野菜果物注文の売上実績から入力してください。
+        </p>
+        <ReadonlyText   label="天気"           value={dxWeather} />
+        <ReadonlyAmount label="売上予測(前年)" value={dxForecast} unit="円" />
+        <ReadonlyAmount label="売上実績"       value={dxActual}   unit="円" />
+        <ReadonlyAmount label="客数"           value={dxCustomerCount} unit="人" />
+        {tanka !== null && (
+          <div className="mt-1 text-xs font-mono text-muted text-right">
+            客単価 {formatJpy(tanka)}
+          </div>
+        )}
       </Section>
 
       {/* 気づき・残数(シフトの下) */}
