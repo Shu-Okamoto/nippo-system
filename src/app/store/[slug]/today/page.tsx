@@ -17,8 +17,8 @@ type ReportState = {
   sales_forecast: number | null;
   sales_actual: number | null;
   customer_count: number | null;
-  sozai_zan: number | null;
-  mochi_zan: number | null;
+  sozai_zan: string;
+  mochi_zan: string;
   report_text: string;
   kizuki: string;
   bikou: string;
@@ -51,8 +51,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     sales_forecast: null,
     sales_actual: null,
     customer_count: null,
-    sozai_zan: null,
-    mochi_zan: null,
+    sozai_zan: '',
+    mochi_zan: '',
     report_text: '',
     kizuki: '',
     bikou: '',
@@ -121,8 +121,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           sales_forecast: r.sales_forecast,
           sales_actual: r.sales_actual,
           customer_count: r.customer_count,
-          sozai_zan: r.sozai_zan,
-          mochi_zan: r.mochi_zan,
+          sozai_zan: r.sozai_zan || '',
+          mochi_zan: r.mochi_zan || '',
           report_text: r.report_text || '',
           kizuki: r.kizuki || '',
           bikou: r.bikou || '',
@@ -336,8 +336,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         p_sales_forecast: latestForecast,
         p_sales_actual: latestActual,
         p_customer_count: report.customer_count,
-        p_sozai_zan: report.sozai_zan,
-        p_mochi_zan: report.mochi_zan,
+        p_sozai_zan: report.sozai_zan || null,
+        p_mochi_zan: report.mochi_zan || null,
         p_report_text: report.report_text || null,
         p_kizuki: report.kizuki || null,
         p_bikou: report.bikou || null,
@@ -534,21 +534,19 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       <Section label="気づき・残数" title="記録">
         <TextArea label="気づき" value={report.kizuki} onChange={(v) => updateReport({ kizuki: v })} />
         <TextArea
-          label="惣菜残・餅残・備考"
-          value={report.bikou}
-          onChange={(v) => updateReport({ bikou: v })}
-        />
-        <NumInput
           label="惣菜残(14時時点)"
-          unit="点"
           value={report.sozai_zan}
           onChange={(v) => updateReport({ sozai_zan: v })}
         />
-        <NumInput
+        <TextArea
           label="餅残"
-          unit="点"
           value={report.mochi_zan}
           onChange={(v) => updateReport({ mochi_zan: v })}
+        />
+        <TextArea
+          label="備考"
+          value={report.bikou}
+          onChange={(v) => updateReport({ bikou: v })}
         />
       </Section>
 
