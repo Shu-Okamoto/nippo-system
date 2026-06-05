@@ -49,13 +49,13 @@ BEGIN
 
   -- 前年同曜日の売上
   SELECT amount INTO v_forecast
-  FROM dx.sale
+  FROM dx."Sale"
   WHERE "storeId"  = v_store_id
     AND "saleDate" = v_prev_year_date;
 
   -- 当日の売上
   SELECT amount INTO v_actual
-  FROM dx.sale
+  FROM dx."Sale"
   WHERE "storeId"  = v_store_id
     AND "saleDate" = p_today;
 
