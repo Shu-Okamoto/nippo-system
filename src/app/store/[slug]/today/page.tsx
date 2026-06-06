@@ -39,7 +39,7 @@ function nextLocalId(): number {
 
 // 備考欄の季節限定テンプレート(うなぎ予約 / プレミアム商品券)
 // 期間外なら表示しない(切替は MONTHS を編集)
-const BIKOU_TEMPLATE_MONTHS = [7, 8]; // 7月・8月
+const BIKOU_TEMPLATE_MONTHS = [6, 7]; // 6月・7月
 const BIKOU_TEMPLATE = 'うなぎの予約数累計＝\nプレミアム商品券の使用枚数＝';
 function getBikouTemplate(): string {
   return BIKOU_TEMPLATE_MONTHS.includes(new Date().getMonth() + 1)
