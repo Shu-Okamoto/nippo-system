@@ -53,13 +53,12 @@ export function QuestionsMaster() {
     load();
   };
 
-  const toggleActive = async (id: number, current: boolean) => {
-    await supabase.from('report_questions').update({ is_active: !current }).eq('id', id);
-    load();
-  };
-
-  const updateField = async (id: number, patch: Partial<ReportQuestion>) => {
-    await supabase.from('report_questions').update(patch).eq('id', id);
+  const saveField = async (id: number, patch: Partial<ReportQuestion>) => {
+    const { error } = await supabase.from('report_questions').update(patch).eq('id', id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
     load();
   };
 
@@ -81,58 +80,7 @@ export function QuestionsMaster() {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className={`border-b border-ink ${!r.is_active ? 'text-stone-400' : ''}`}>
-              <td className="p-2.5 font-mono">{r.id}</td>
-              <td className="p-2.5">{r.question}</td>
-              <td className="p-2.5">
-                <select
-                  value={r.input_type}
-                  onChange={(e) => updateField(r.id, { input_type: e.target.value as ReportInputType })}
-                  className="p-1 border-1.5 border-ink bg-paper text-xs"
-                  disabled={!r.is_active}
-                >
-                  {INPUT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </td>
-              <td className="p-2.5">
-                <input
-                  type="text"
-                  value={r.initial_value || ''}
-                  onChange={(e) => updateField(r.id, { initial_value: e.target.value || null })}
-                  className="w-full p-1 border-1.5 border-ink bg-paper text-xs"
-                  disabled={!r.is_active}
-                  placeholder="(空欄)"
-                />
-              </td>
-              <td className="p-2.5 text-center">
-                <input
-                  type="number"
-                  value={r.sort_order}
-                  onChange={(e) => updateField(r.id, { sort_order: Number(e.target.value) })}
-                  className="w-16 p-1 border-1.5 border-ink bg-paper text-xs font-mono text-right"
-                  disabled={!r.is_active}
-                />
-              </td>
-              <td className="p-2.5 text-center">
-                <span className={`inline-block px-2 py-0.5 text-xs font-bold border-1.5 border-ink ${
-                  r.is_active ? 'bg-paper2' : 'bg-stone-300'
-                }`}>
-                  {r.is_active ? '有効' : '停止'}
-                </span>
-              </td>
-              <td className="p-2.5 text-center">
-                <button
-                  onClick={() => toggleActive(r.id, r.is_active)}
-                  className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold ${
-                    r.is_active ? 'text-accent border-accent' : ''
-                  }`}
-                >
-                  {r.is_active ? '停止' : '復帰'}
-                </button>
-              </td>
-            </tr>
+            <QuestionRow key={r.id} row={r} onSave={(patch) => saveField(r.id, patch)} />
           ))}
         </tbody>
       </table>
@@ -171,9 +119,108 @@ export function QuestionsMaster() {
           </button>
         </div>
         <p className="mt-2 text-xs text-muted">
-          ※ 表内の「入力タイプ」「初期値」「並び順」はその場で直接編集できます(停止中は不可)
+          ※ 表内の「質問内容」「入力タイプ」「初期値」「並び順」は入力後にフィールドから離れた時(フォーカスが外れた時)に保存されます
         </p>
       </div>
     </div>
+  );
+}
+
+// 1行分のローカル編集ステート
+function QuestionRow({
+  row,
+  onSave,
+}: {
+  row: ReportQuestion;
+  onSave: (patch: Partial<ReportQuestion>) => Promise<void>;
+}) {
+  const [question, setQuestion] = useState(row.question);
+  const [initialValue, setInitialValue] = useState(row.initial_value || '');
+  const [sortOrder, setSortOrder] = useState(String(row.sort_order));
+
+  // row が外部更新(load 後)で変わったら同期
+  useEffect(() => {
+    setQuestion(row.question);
+    setInitialValue(row.initial_value || '');
+    setSortOrder(String(row.sort_order));
+  }, [row.id, row.question, row.initial_value, row.sort_order]);
+
+  const disabled = !row.is_active;
+
+  return (
+    <tr className={`border-b border-ink ${disabled ? 'text-stone-400' : ''}`}>
+      <td className="p-2.5 font-mono">{row.id}</td>
+      <td className="p-2.5">
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onBlur={() => {
+            const trimmed = question.trim();
+            if (!trimmed || trimmed === row.question) return;
+            onSave({ question: trimmed });
+          }}
+          className="w-full p-1 border-1.5 border-ink bg-paper text-sm"
+          disabled={disabled}
+        />
+      </td>
+      <td className="p-2.5">
+        <select
+          value={row.input_type}
+          onChange={(e) => onSave({ input_type: e.target.value as ReportInputType })}
+          className="p-1 border-1.5 border-ink bg-paper text-xs"
+          disabled={disabled}
+        >
+          {INPUT_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+      </td>
+      <td className="p-2.5">
+        <input
+          type="text"
+          value={initialValue}
+          onChange={(e) => setInitialValue(e.target.value)}
+          onBlur={() => {
+            if (initialValue === (row.initial_value || '')) return;
+            onSave({ initial_value: initialValue || null });
+          }}
+          className="w-full p-1 border-1.5 border-ink bg-paper text-xs"
+          disabled={disabled}
+          placeholder="(空欄)"
+        />
+      </td>
+      <td className="p-2.5 text-center">
+        <input
+          type="number"
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          onBlur={() => {
+            const n = Number(sortOrder);
+            if (!Number.isFinite(n) || n === row.sort_order) return;
+            onSave({ sort_order: n });
+          }}
+          className="w-16 p-1 border-1.5 border-ink bg-paper text-xs font-mono text-right"
+          disabled={disabled}
+        />
+      </td>
+      <td className="p-2.5 text-center">
+        <span className={`inline-block px-2 py-0.5 text-xs font-bold border-1.5 border-ink ${
+          row.is_active ? 'bg-paper2' : 'bg-stone-300'
+        }`}>
+          {row.is_active ? '有効' : '停止'}
+        </span>
+      </td>
+      <td className="p-2.5 text-center">
+        <button
+          onClick={() => onSave({ is_active: !row.is_active })}
+          className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold ${
+            row.is_active ? 'text-accent border-accent' : ''
+          }`}
+        >
+          {row.is_active ? '停止' : '復帰'}
+        </button>
+      </td>
+    </tr>
   );
 }
