@@ -422,12 +422,12 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       </div>
 
       {/* 日報(一番上) */}
-      <Section label="日報" title="ひとこと">
+      <Section label="日報" title="本日の営業を一言で">
         <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
       </Section>
 
       {/* シフト */}
-      <Section label="ワークスケジュール" title="シフト">
+      <Section label="ワークスケジュール" hideTitle>
         <div className="flex border-2 border-ink mb-3">
           {(['plan', 'actual'] as EntryType[]).map((t) => (
             <button
@@ -552,7 +552,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       </Section>
 
       {/* 本部注文(一番下) */}
-      <Section label="本部への注文" title="明日の注文票">
+      <Section label="本部への注文" hideTitle>
         <div className="border-2 border-ink bg-paper">
           {orders.length === 0 ? (
             <div className="p-4 text-center text-xs text-muted font-mono">
@@ -636,7 +636,7 @@ function Section({
 }) {
   return (
     <div className="px-5 py-5 border-b-2 border-ink">
-      <div className="font-mincho text-xs font-bold text-muted tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-4 before:h-0.5 before:bg-ink">
+      <div className="font-mincho text-base font-extrabold text-ink tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-4 before:h-0.5 before:bg-ink">
         {label}
       </div>
       {!hideTitle && title && (
