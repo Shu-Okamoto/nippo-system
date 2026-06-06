@@ -37,6 +37,16 @@ function nextLocalId(): number {
   return localIdCounter--;
 }
 
+// 備考欄の季節限定テンプレート(うなぎ予約 / プレミアム商品券)
+// 期間外なら表示しない(切替は MONTHS を編集)
+const BIKOU_TEMPLATE_MONTHS = [7, 8]; // 7月・8月
+const BIKOU_TEMPLATE = 'うなぎの予約数累計＝\nプレミアム商品券の使用枚数＝';
+function getBikouTemplate(): string {
+  return BIKOU_TEMPLATE_MONTHS.includes(new Date().getMonth() + 1)
+    ? BIKOU_TEMPLATE
+    : '';
+}
+
 export default function TodayPage({ params }: { params: { slug: string } }) {
   const slug = params.slug;
 
@@ -144,9 +154,10 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           setSavedAt(d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
         }
       } else {
-        // 日報がまだ無い
+        // 日報がまだ無い → 備考欄に季節テンプレートを初期表示
         setShifts([]);
         setOrders([]);
+        setReport((prev) => ({ ...prev, bikou: getBikouTemplate() }));
       }
 
       // dx.sale から「前年同曜日売上」と「当日売上」を取得
