@@ -3,8 +3,9 @@ import { useState } from 'react';
 import { StoresMaster } from '@/components/admin/StoresMaster';
 import { StaffMaster } from '@/components/admin/StaffMaster';
 import { ProductsMaster } from '@/components/admin/ProductsMaster';
+import { QuestionsMaster } from '@/components/admin/QuestionsMaster';
 
-type Tab = 'store' | 'staff' | 'product';
+type Tab = 'store' | 'staff' | 'product' | 'question';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('store');
@@ -13,14 +14,15 @@ export default function AdminPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h1 className="font-mincho text-3xl font-extrabold">マスタ管理</h1>
-        <p className="text-xs text-muted font-mono mt-1 tracking-wider">STORES · STAFF · PRODUCTS</p>
+        <p className="text-xs text-muted font-mono mt-1 tracking-wider">STORES · STAFF · PRODUCTS · QUESTIONS</p>
       </div>
 
       <div className="flex border-2 border-ink mb-6 bg-paper">
         {[
-          { k: 'store' as Tab, label: '店舗マスタ' },
-          { k: 'staff' as Tab, label: 'スタッフマスタ' },
-          { k: 'product' as Tab, label: '商品マスタ' },
+          { k: 'store' as Tab,    label: '店舗マスタ' },
+          { k: 'staff' as Tab,    label: 'スタッフマスタ' },
+          { k: 'product' as Tab,  label: '商品マスタ' },
+          { k: 'question' as Tab, label: '質問マスタ' },
         ].map((t) => (
           <button
             key={t.k}
@@ -34,9 +36,10 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {tab === 'store' && <StoresMaster />}
-      {tab === 'staff' && <StaffMaster />}
-      {tab === 'product' && <ProductsMaster />}
+      {tab === 'store'    && <StoresMaster />}
+      {tab === 'staff'    && <StaffMaster />}
+      {tab === 'product'  && <ProductsMaster />}
+      {tab === 'question' && <QuestionsMaster />}
     </div>
   );
 }
