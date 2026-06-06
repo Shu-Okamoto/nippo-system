@@ -473,7 +473,7 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       </div>
 
       {/* 日報(一番上) */}
-      <Section label="日報" title="本日の営業を一言で">
+      <Section label="本日の営業を一言で" hideTitle>
         <TextArea label="日報" value={report.report_text} onChange={(v) => updateReport({ report_text: v })} />
       </Section>
 
