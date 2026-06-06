@@ -67,3 +67,21 @@ export type OrderLine = {
   planned_qty: number;
   actual_qty: number;
 };
+
+export type ReportInputType = 'text' | 'textarea' | 'number' | 'checkbox';
+
+export type ReportQuestion = {
+  id: number;
+  question: string;
+  input_type: ReportInputType;
+  sort_order: number;
+  is_active: boolean;
+  initial_value: string | null;
+};
+
+export type ReportAnswer = {
+  id: number;
+  daily_report_id: number;
+  question_id: number;
+  answer_text: string | null;
+};

@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Store, Staff, Product, ShiftEntry, EntryType, ShiftPattern } from '@/lib/types';
+import type {
+  Store, Staff, Product, ShiftEntry, EntryType, ShiftPattern,
+  ReportQuestion,
+} from '@/lib/types';
 import { totalHours, ninjibai, kyakuTanka, formatJpy, shiftMinutes } from '@/lib/calc';
 import { NumInput } from '@/components/staff/NumInput';
 import { OrderRow } from '@/components/staff/OrderRow';
@@ -18,8 +21,6 @@ type ReportState = {
   sozai_zan: string;
   mochi_zan: string;
   report_text: string;
-  kizuki: string;
-  bikou: string;
 };
 
 type LocalShift = ShiftEntry;
@@ -61,9 +62,9 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
     sozai_zan: '',
     mochi_zan: '',
     report_text: '',
-    kizuki: '',
-    bikou: '',
   });
+  const [questions, setQuestions] = useState<ReportQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [shifts, setShifts] = useState<LocalShift[]>([]);
   const [orders, setOrders] = useState<LocalOrder[]>([]);
 
@@ -115,6 +116,15 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         .order('sort_order');
       setProducts(prodData || []);
 
+      // 質問マスタ(有効分)を取得
+      const { data: qData } = await supabase
+        .from('report_questions')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+      const qList = (qData || []) as ReportQuestion[];
+      setQuestions(qList);
+
       // 日報・シフト・注文を一括取得(RPC経由でRLSを貫通)
       const { data: full, error: e2 } = await supabase.rpc('get_today_full', { p_slug: slug });
       if (e2) {
@@ -132,9 +142,24 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           sozai_zan: r.sozai_zan || '',
           mochi_zan: r.mochi_zan || '',
           report_text: r.report_text || '',
-          kizuki: r.kizuki || '',
-          bikou: r.bikou || '',
         });
+
+        // 既存の回答を取得して、質問IDをキーにしたマップに
+        const { data: aData } = await supabase
+          .from('report_answers')
+          .select('question_id, answer_text')
+          .eq('daily_report_id', r.id);
+        const ansMap: Record<number, string> = {};
+        for (const a of (aData || []) as { question_id: number; answer_text: string | null }[]) {
+          ansMap[a.question_id] = a.answer_text || '';
+        }
+        // 未回答の質問には initial_value を初期値として入れる
+        for (const q of qList) {
+          if (ansMap[q.id] === undefined) {
+            ansMap[q.id] = q.initial_value || '';
+          }
+        }
+        setAnswers(ansMap);
 
         // シフト(RPCがjsonb配列で返す)
         setShifts((full.shifts || []) as LocalShift[]);
@@ -154,10 +179,18 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           setSavedAt(d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
         }
       } else {
-        // 日報がまだ無い → 備考欄に季節テンプレートを初期表示
+        // 日報がまだ無い → 質問は initial_value(備考は季節テンプレ)で初期化
         setShifts([]);
         setOrders([]);
-        setReport((prev) => ({ ...prev, bikou: getBikouTemplate() }));
+        const ansMap: Record<number, string> = {};
+        for (const q of qList) {
+          if (q.question === '備考') {
+            ansMap[q.id] = q.initial_value || getBikouTemplate();
+          } else {
+            ansMap[q.id] = q.initial_value || '';
+          }
+        }
+        setAnswers(ansMap);
       }
 
       // dx.sale から「前年同曜日売上」と「当日売上」を取得
@@ -332,6 +365,12 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           planned_qty: o.planned_qty,
         }));
 
+      // 動的回答ペイロード(有効な質問のみ、空文字を除外せずそのまま記録)
+      const answersPayload = questions.map((q) => ({
+        question_id: q.id,
+        answer_text: answers[q.id] ?? null,
+      }));
+
       // 保存時にも dx.sale を最新で引き直して daily_reports に記録
       const today = new Date().toISOString().slice(0, 10);
       const { data: latestSales } = await supabase.rpc('get_dx_sales', {
@@ -357,10 +396,11 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         p_sozai_zan: report.sozai_zan || null,
         p_mochi_zan: report.mochi_zan || null,
         p_report_text: report.report_text || null,
-        p_kizuki: report.kizuki || null,
-        p_bikou: report.bikou || null,
+        p_kizuki: null,
+        p_bikou: null,
         p_shifts: shiftsPayload,
         p_orders: ordersPayload,
+        p_answers: answersPayload,
       });
 
       if (e) {
@@ -544,7 +584,6 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
 
       {/* 気づき・残数(シフトの下) */}
       <Section label="気づき・残数" hideTitle>
-        <TextArea label="気づき" value={report.kizuki} onChange={(v) => updateReport({ kizuki: v })} />
         <TextArea
           label="惣菜残(14時時点)"
           value={report.sozai_zan}
@@ -555,11 +594,18 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           value={report.mochi_zan}
           onChange={(v) => updateReport({ mochi_zan: v })}
         />
-        <TextArea
-          label="備考"
-          value={report.bikou}
-          onChange={(v) => updateReport({ bikou: v })}
-        />
+        {/* 質問マスタから動的に生成される項目 */}
+        {questions.map((q) => (
+          <DynamicField
+            key={q.id}
+            question={q}
+            value={answers[q.id] ?? ''}
+            onChange={(v) => {
+              setAnswers((prev) => ({ ...prev, [q.id]: v }));
+              markDirty();
+            }}
+          />
+        ))}
       </Section>
 
       {/* 本部注文(一番下) */}
@@ -656,6 +702,66 @@ function Section({
       {children}
     </div>
   );
+}
+
+function DynamicField({
+  question,
+  value,
+  onChange,
+}: {
+  question: ReportQuestion;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  switch (question.input_type) {
+    case 'textarea':
+      return <TextArea label={question.question} value={value} onChange={onChange} />;
+    case 'text':
+      return (
+        <div className="mb-3">
+          <label className="block text-xs font-bold mb-1.5 text-muted">{question.question}</label>
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full p-3 border-2 border-ink bg-paper text-sm"
+          />
+        </div>
+      );
+    case 'number':
+      return (
+        <div className="mb-3">
+          <label className="block text-xs font-bold mb-1.5 text-muted">{question.question}</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={value}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/[^\d.-]/g, '');
+              onChange(digits);
+            }}
+            className="w-full px-3 py-3 text-xl font-bold border-2 border-ink bg-paper font-mono text-right"
+          />
+        </div>
+      );
+    case 'checkbox':
+      return (
+        <div className="mb-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id={`q-${question.id}`}
+            checked={value === 'true'}
+            onChange={(e) => onChange(e.target.checked ? 'true' : 'false')}
+            className="w-5 h-5 border-2 border-ink"
+          />
+          <label htmlFor={`q-${question.id}`} className="text-sm font-bold">
+            {question.question}
+          </label>
+        </div>
+      );
+    default:
+      return null;
+  }
 }
 
 function ReadonlyText({ label, value }: { label: string; value: string | null }) {
