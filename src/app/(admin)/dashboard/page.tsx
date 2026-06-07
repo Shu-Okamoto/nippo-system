@@ -9,6 +9,11 @@ type OrderItem = {
   is_manual: boolean;
 };
 
+type QA = {
+  question: string;
+  answer: string;
+};
+
 type DashRow = {
   daily_report_id: number;
   store_id: number;
@@ -23,7 +28,10 @@ type DashRow = {
   weather?: string | null;
   report_text?: string | null;
   kizuki?: string | null;
+  sozai_zan?: string | null;
+  mochi_zan?: string | null;
   orders?: OrderItem[];
+  qas?: QA[];
 };
 
 const WEATHER_LABEL: Record<string, string> = {
@@ -49,7 +57,7 @@ export default function DashboardPage() {
 
       const { data: reports } = await supabase
         .from('daily_reports')
-        .select('id, weather, report_text, kizuki, store_id, stores(name)')
+        .select('id, weather, report_text, kizuki, sozai_zan, mochi_zan, store_id, stores(name)')
         .eq('report_date', date);
 
       // 注文明細(本部ログイン済みなので直接SELECT可)
@@ -60,6 +68,23 @@ export default function DashboardPage() {
             .select('daily_report_id, product_id, item_name_manual, planned_qty, products(name, sort_order)')
             .in('daily_report_id', reportIds)
         : { data: [] };
+
+      // 動的回答 + 質問マスタを取得
+      const { data: answers } = reportIds.length
+        ? await supabase
+            .from('report_answers')
+            .select('daily_report_id, question_id, answer_text')
+            .in('daily_report_id', reportIds)
+        : { data: [] };
+
+      const { data: questions } = await supabase
+        .from('report_questions')
+        .select('id, question, sort_order, is_active')
+        .order('sort_order');
+      const questionMap = new Map<number, { question: string; sort_order: number; is_active: boolean }>();
+      for (const q of (questions || []) as any[]) {
+        questionMap.set(q.id, { question: q.question, sort_order: q.sort_order, is_active: q.is_active });
+      }
 
       const merged: DashRow[] = (kpi || []).map((k) => {
         const r = (reports || []).find((x) => x.id === k.daily_report_id) as any;
@@ -75,13 +100,31 @@ export default function DashboardPage() {
           .sort((a, b) => a.sort_key - b.sort_key)
           .map(({ name, planned_qty, is_manual }) => ({ name, planned_qty, is_manual }));
 
+        // 動的Q&A(回答ありのみ、質問マスタの sort_order 順)
+        const qas: QA[] = ((answers || []) as any[])
+          .filter((a) => a.daily_report_id === k.daily_report_id)
+          .map((a) => {
+            const q = questionMap.get(a.question_id);
+            return {
+              question: q?.question || '(削除済み質問)',
+              answer: a.answer_text || '',
+              sort_key: q?.sort_order ?? 9999,
+            };
+          })
+          .filter((qa) => qa.answer.trim() !== '')
+          .sort((a, b) => a.sort_key - b.sort_key)
+          .map(({ question, answer }) => ({ question, answer }));
+
         return {
           ...k,
           store_name: r?.stores?.name,
           weather: r?.weather,
           report_text: r?.report_text,
           kizuki: r?.kizuki,
+          sozai_zan: r?.sozai_zan,
+          mochi_zan: r?.mochi_zan,
           orders,
+          qas,
         };
       });
       setRows(merged);
@@ -165,14 +208,34 @@ export default function DashboardPage() {
                   <Field label="客数" value={r.customer_count !== null ? `${r.customer_count}人` : '—'} />
                   <Field label="総時間" value={r.total_hours !== null ? `${Number(r.total_hours).toFixed(1)}h` : '—'} />
                 </div>
-                {(r.report_text || r.kizuki) && (
+                {(r.report_text || r.kizuki || r.sozai_zan || r.mochi_zan || (r.qas && r.qas.length > 0)) && (
                   <div className="border-t border-dashed border-ink p-4 bg-paper2 text-sm leading-relaxed">
                     {r.report_text && (
                       <div>
-                        <b className="font-mincho text-accent mr-2">日報</b>
+                        <b className="font-mincho text-accent mr-2">本日の営業を一言で</b>
                         {r.report_text}
                       </div>
                     )}
+                    {r.sozai_zan && (
+                      <div className="mt-1">
+                        <b className="font-mincho text-accent mr-2">惣菜残(14時時点)</b>
+                        {r.sozai_zan}
+                      </div>
+                    )}
+                    {r.mochi_zan && (
+                      <div className="mt-1">
+                        <b className="font-mincho text-accent mr-2">餅残</b>
+                        {r.mochi_zan}
+                      </div>
+                    )}
+                    {/* 動的Q&A */}
+                    {r.qas && r.qas.map((qa, i) => (
+                      <div key={i} className="mt-1 whitespace-pre-wrap">
+                        <b className="font-mincho text-accent mr-2">{qa.question}</b>
+                        {qa.answer}
+                      </div>
+                    ))}
+                    {/* 旧 kizuki(互換維持。新規保存では使われない) */}
                     {r.kizuki && (
                       <div className="mt-1">
                         <b className="font-mincho text-accent mr-2">気づき</b>
