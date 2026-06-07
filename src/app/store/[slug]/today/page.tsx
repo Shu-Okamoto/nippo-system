@@ -144,11 +144,23 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
           report_text: r.report_text || '',
         });
 
+        // get_today_full は report.id を返さないため、daily_reports から
+        // 当日の id を取得して回答を引く
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const { data: drRow } = await supabase
+          .from('daily_reports')
+          .select('id')
+          .eq('store_id', s.id)
+          .eq('report_date', todayStr)
+          .maybeSingle();
+
         // 既存の回答を取得して、質問IDをキーにしたマップに
-        const { data: aData } = await supabase
-          .from('report_answers')
-          .select('question_id, answer_text')
-          .eq('daily_report_id', r.id);
+        const { data: aData } = drRow?.id
+          ? await supabase
+              .from('report_answers')
+              .select('question_id, answer_text')
+              .eq('daily_report_id', drRow.id)
+          : { data: [] };
         const ansMap: Record<number, string> = {};
         for (const a of (aData || []) as { question_id: number; answer_text: string | null }[]) {
           ansMap[a.question_id] = a.answer_text || '';
