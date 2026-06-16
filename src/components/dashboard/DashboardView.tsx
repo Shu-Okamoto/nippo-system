@@ -49,6 +49,10 @@ export function DashboardView() {
   useEffect(() => {
     (async () => {
       setLoading(true);
+      // dx."Sale" の最新値を daily_reports に反映してから KPI を読む
+      // (店舗 today で save した時点で dx に値が無かった日報を救済)
+      await supabase.rpc('sync_dx_for_date', { p_date: date });
+
       const { data: kpi } = await supabase
         .from('daily_kpi')
         .select('*')
