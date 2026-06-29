@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatJpy } from '@/lib/calc';
+import { formatJpy, shiftMinutes, formatTimeRange } from '@/lib/calc';
+import type { ShiftEntry } from '@/lib/types';
 
 type OrderItem = {
   name: string;
@@ -12,6 +13,13 @@ type OrderItem = {
 type QA = {
   question: string;
   answer: string;
+};
+
+type ShiftRowItem = {
+  name: string;
+  range: string;
+  hours: number;
+  entry_type: 'plan' | 'actual';
 };
 
 type DashRow = {
@@ -32,6 +40,7 @@ type DashRow = {
   mochi_zan?: string | null;
   orders?: OrderItem[];
   qas?: QA[];
+  shifts?: ShiftRowItem[];
 };
 
 const WEATHER_LABEL: Record<string, string> = {
@@ -78,6 +87,15 @@ export function DashboardView() {
             .in('daily_report_id', reportIds)
         : { data: [] };
 
+      // シフト + スタッフ名解決(当日表示するための実シフト)
+      const { data: shiftRows } = reportIds.length
+        ? await supabase
+            .from('shift_entries')
+            .select('*, staff(name, sort_order)')
+            .in('daily_report_id', reportIds)
+            .eq('entry_type', 'actual')
+        : { data: [] };
+
       const { data: questions } = await supabase
         .from('report_questions')
         .select('id, question, sort_order, is_active')
@@ -99,6 +117,19 @@ export function DashboardView() {
           }))
           .sort((a, b) => a.sort_key - b.sort_key)
           .map(({ name, planned_qty, is_manual }) => ({ name, planned_qty, is_manual }));
+
+        // 当日のシフト(実績のみ、スタッフ sort_order 順)
+        const shifts: ShiftRowItem[] = ((shiftRows || []) as any[])
+          .filter((sh) => sh.daily_report_id === k.daily_report_id)
+          .map((sh) => ({
+            name: sh.staff?.name || sh.staff_name_manual || '(未設定)',
+            range: formatTimeRange(sh as ShiftEntry),
+            hours: shiftMinutes(sh as ShiftEntry) / 60,
+            entry_type: sh.entry_type as 'plan' | 'actual',
+            sort_key: sh.staff?.sort_order ?? 9999,
+          }))
+          .sort((a, b) => a.sort_key - b.sort_key)
+          .map(({ name, range, hours, entry_type }) => ({ name, range, hours, entry_type }));
 
         const qas: QA[] = ((answers || []) as any[])
           .filter((a) => a.daily_report_id === k.daily_report_id)
@@ -124,6 +155,7 @@ export function DashboardView() {
           mochi_zan: r?.mochi_zan,
           orders,
           qas,
+          shifts,
         };
       });
       setRows(merged);
@@ -238,6 +270,33 @@ export function DashboardView() {
                     )}
                   </div>
                 )}
+                {/* ワークスケジュール */}
+                <div className="border-t border-dashed border-ink p-4">
+                  <b className="font-mincho text-accent text-sm block mb-2">ワークスケジュール</b>
+                  {r.shifts && r.shifts.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-[11px] text-muted font-mincho font-bold">
+                          <th className="text-left py-1 w-28">メンバー</th>
+                          <th className="text-left py-1">時間</th>
+                          <th className="text-right py-1 w-16">実働</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {r.shifts.map((sh, i) => (
+                          <tr key={i} className="border-b border-dotted border-stone-300">
+                            <td className="py-1 font-bold">{sh.name}</td>
+                            <td className="py-1 font-mono text-xs">{sh.range}</td>
+                            <td className="py-1 font-mono text-right">{sh.hours.toFixed(1)}h</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <span className="text-xs text-muted font-mono">シフト未入力</span>
+                  )}
+                </div>
+
                 <div className="border-t border-dashed border-ink p-4">
                   <b className="font-mincho text-accent text-sm block mb-2">本部への注文</b>
                   {r.orders && r.orders.length > 0 ? (
