@@ -105,3 +105,20 @@ dx スキーマを Exposed schemas に追加する必要はありません(SECUR
 
 `.env.local` の URL/anon キーを現行プロジェクトに戻すだけ。
 移行先は `DROP SCHEMA nippo CASCADE;` で初期化可能。
+
+---
+
+## Step 6 — 過去日報の編集を可能にする RPC(管理画面 `/edit/[slug]/[date]` 用)
+
+`09_edit_past_reports.sql` を移行先 SQL Editor で1回実行する。
+
+以下2つの RPC が追加される:
+
+- `nippo.get_report_full(p_slug text, p_date date)` … 任意日付の日報 +
+  シフト + 注文を jsonb 一括で返す(`get_today_full` の日付パラメータ版)
+- `nippo.save_report_full(p_slug, p_date, ...)` … 任意日付の日報を
+  一括保存(`save_daily_report_full` と違い dx.sale の再フェッチをせず、
+  フロントから渡された値をそのまま保存)
+
+既存の `get_today_full` / `save_daily_report_full` はそのまま残しており、
+スタッフ画面 `/store/<slug>/today` の動作には影響しない。
