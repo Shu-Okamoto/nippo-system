@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { formatJpy, shiftMinutes, formatTimeRange } from '@/lib/calc';
 import type { ShiftEntry } from '@/lib/types';
@@ -33,6 +34,7 @@ type DashRow = {
   ninjibai: number | null;
   kyaku_tanka: number | null;
   store_name?: string;
+  store_slug?: string;
   weather?: string | null;
   report_text?: string | null;
   kizuki?: string | null;
@@ -69,7 +71,7 @@ export function DashboardView() {
 
       const { data: reports } = await supabase
         .from('daily_reports')
-        .select('id, weather, report_text, kizuki, sozai_zan, mochi_zan, store_id, stores(name)')
+        .select('id, weather, report_text, kizuki, sozai_zan, mochi_zan, store_id, stores(name, slug)')
         .eq('report_date', date);
 
       const reportIds = (reports || []).map((r) => r.id);
@@ -148,6 +150,7 @@ export function DashboardView() {
         return {
           ...k,
           store_name: r?.stores?.name,
+          store_slug: r?.stores?.slug,
           weather: r?.weather,
           report_text: r?.report_text,
           kizuki: r?.kizuki,
@@ -223,9 +226,17 @@ export function DashboardView() {
               <div key={r.daily_report_id} className="store-card-print border-2 border-ink mb-4 bg-paper">
                 <div className="px-4 py-3 bg-ink text-paper flex items-center justify-between flex-wrap gap-2">
                   <h3 className="font-mincho text-lg font-extrabold">{r.store_name}</h3>
-                  <div className="flex gap-2 text-xs">
+                  <div className="flex gap-2 text-xs items-center">
                     {r.weather && (
                       <span className="px-2 py-0.5 border-1.5 border-paper">{WEATHER_LABEL[r.weather] || r.weather}</span>
+                    )}
+                    {r.store_slug && (
+                      <Link
+                        href={`/edit/${r.store_slug}/${date}`}
+                        className="no-print px-2 py-0.5 border-1.5 border-paper font-mincho font-bold hover:bg-paper hover:text-ink transition-colors"
+                      >
+                        ✎ 編集
+                      </Link>
                     )}
                   </div>
                 </div>
@@ -246,7 +257,7 @@ export function DashboardView() {
                     )}
                     {r.sozai_zan && (
                       <div className="mt-1">
-                        <b className="font-mincho text-accent mr-2">惣菜残(14時時点)</b>
+                        <b className="font-mincho text-accent mr-2">患菜残(14時時点)</b>
                         {r.sozai_zan}
                       </div>
                     )}
