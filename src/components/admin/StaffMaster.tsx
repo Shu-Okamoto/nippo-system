@@ -46,7 +46,33 @@ export function StaffMaster() {
   };
 
   const toggleActive = async (id: number, current: boolean) => {
-    await supabase.from('staff').update({ is_active: !current }).eq('id', id);
+    const { error } = await supabase.from('staff').update({ is_active: !current }).eq('id', id);
+    if (error) {
+      alert(`状態を変更できませんでした: ${error.message}`);
+      return;
+    }
+    load();
+  };
+
+  const deleteRow = async (r: Staff) => {
+    // shift_entries.staff_id は ON DELETE SET NULL。
+    // 削除すると過去シフトの名前が「(未設定)」になるので件数を出して警告する
+    const { count } = await supabase
+      .from('shift_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('staff_id', r.id);
+
+    const used = (count ?? 0) > 0;
+    const msg = used
+      ? `「${r.name}」は過去のシフト ${count} 件に記録されています。\n削除すると過去の日報・月間レポートで名前が「(未設定)」と表示されます。\n\n退職の場合は履歴が残る「停止」を推奨します。それでも削除しますか?`
+      : `「${r.name}」を削除します。よろしいですか?`;
+    if (!confirm(msg)) return;
+
+    const { error } = await supabase.from('staff').delete().eq('id', r.id);
+    if (error) {
+      alert(`削除できませんでした: ${error.message}`);
+      return;
+    }
     load();
   };
 
@@ -65,7 +91,7 @@ export function StaffMaster() {
             <th className="p-2.5 text-left">区分</th>
             <th className="p-2.5 text-center">並び順</th>
             <th className="p-2.5 text-center">状態</th>
-            <th className="p-2.5 text-center w-32">操作</th>
+            <th className="p-2.5 text-center w-40">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -89,14 +115,20 @@ export function StaffMaster() {
                   {r.is_active ? '稼働' : '停止'}
                 </span>
               </td>
-              <td className="p-2.5 text-center">
+              <td className="p-2.5 text-center whitespace-nowrap">
                 <button
                   onClick={() => toggleActive(r.id, r.is_active)}
-                  className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold ${
+                  className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold mr-1.5 ${
                     r.is_active ? 'text-accent border-accent' : ''
                   }`}
                 >
                   {r.is_active ? '停止' : '復帰'}
+                </button>
+                <button
+                  onClick={() => deleteRow(r)}
+                  className="text-xs px-2.5 py-1 border-1.5 border-accent text-paper bg-accent font-bold"
+                >
+                  削除
                 </button>
               </td>
             </tr>

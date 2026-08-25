@@ -34,7 +34,34 @@ export function StoresMaster() {
   };
 
   const toggleActive = async (id: number, current: boolean) => {
-    await supabase.from('stores').update({ is_active: !current }).eq('id', id);
+    const { error } = await supabase.from('stores').update({ is_active: !current }).eq('id', id);
+    if (error) {
+      alert(`状態を変更できませんでした: ${error.message}`);
+      return;
+    }
+    load();
+  };
+
+  const deleteRow = async (r: Store) => {
+    // スタッフ・日報から RESTRICT 参照されているため、参照が残っていると削除できない
+    const [{ count: staffCount }, { count: reportCount }] = await Promise.all([
+      supabase.from('staff').select('id', { count: 'exact', head: true }).eq('store_id', r.id),
+      supabase.from('daily_reports').select('id', { count: 'exact', head: true }).eq('store_id', r.id),
+    ]);
+    if ((staffCount ?? 0) > 0 || (reportCount ?? 0) > 0) {
+      alert(
+        `「${r.name}」は削除できません。\n` +
+          `所属スタッフ ${staffCount ?? 0} 名 / 日報 ${reportCount ?? 0} 件が紐づいています。\n` +
+          `店舗を使わなくする場合は「停止」を使ってください。`
+      );
+      return;
+    }
+    if (!confirm(`「${r.name}」を削除します。よろしいですか?`)) return;
+    const { error } = await supabase.from('stores').delete().eq('id', r.id);
+    if (error) {
+      alert(`削除できませんでした: ${error.message}`);
+      return;
+    }
     load();
   };
 
@@ -50,7 +77,7 @@ export function StoresMaster() {
             <th className="p-2.5 text-left">URL Slug</th>
             <th className="p-2.5 text-left">営業時間</th>
             <th className="p-2.5 text-center">状態</th>
-            <th className="p-2.5 text-center w-32">操作</th>
+            <th className="p-2.5 text-center w-40">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -67,14 +94,20 @@ export function StoresMaster() {
                   {r.is_active ? '稼働中' : '停止'}
                 </span>
               </td>
-              <td className="p-2.5 text-center">
+              <td className="p-2.5 text-center whitespace-nowrap">
                 <button
                   onClick={() => toggleActive(r.id, r.is_active)}
-                  className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold ${
+                  className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold mr-1.5 ${
                     r.is_active ? 'text-accent border-accent' : ''
                   }`}
                 >
                   {r.is_active ? '停止' : '復帰'}
+                </button>
+                <button
+                  onClick={() => deleteRow(r)}
+                  className="text-xs px-2.5 py-1 border-1.5 border-accent text-paper bg-accent font-bold"
+                >
+                  削除
                 </button>
               </td>
             </tr>
