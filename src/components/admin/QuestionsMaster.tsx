@@ -62,6 +62,28 @@ export function QuestionsMaster() {
     load();
   };
 
+  const deleteRow = async (r: ReportQuestion) => {
+    // report_answers.question_id は ON DELETE CASCADE。
+    // 削除すると過去日報の回答も一緒に消えるため、件数を出して強めに警告する
+    const { count } = await supabase
+      .from('report_answers')
+      .select('id', { count: 'exact', head: true })
+      .eq('question_id', r.id);
+
+    const used = (count ?? 0) > 0;
+    const msg = used
+      ? `【注意】「${r.question}」には過去の回答が ${count} 件あります。\n削除すると過去日報の回答もすべて削除され、元に戻せません。\n\n質問を使わなくするだけなら「停止」を推奨します。それでも削除しますか?`
+      : `「${r.question}」を削除します。よろしいですか?`;
+    if (!confirm(msg)) return;
+
+    const { error } = await supabase.from('report_questions').delete().eq('id', r.id);
+    if (error) {
+      alert(`削除できませんでした: ${error.message}`);
+      return;
+    }
+    load();
+  };
+
   if (loading) return <div className="p-8 font-mincho">読み込み中…</div>;
 
   return (
@@ -75,12 +97,17 @@ export function QuestionsMaster() {
             <th className="p-2.5 text-left">初期値</th>
             <th className="p-2.5 text-center w-20">並び順</th>
             <th className="p-2.5 text-center w-20">状態</th>
-            <th className="p-2.5 text-center w-24">操作</th>
+            <th className="p-2.5 text-center w-36">操作</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <QuestionRow key={r.id} row={r} onSave={(patch) => saveField(r.id, patch)} />
+            <QuestionRow
+              key={r.id}
+              row={r}
+              onSave={(patch) => saveField(r.id, patch)}
+              onDelete={() => deleteRow(r)}
+            />
           ))}
         </tbody>
       </table>
@@ -130,9 +157,11 @@ export function QuestionsMaster() {
 function QuestionRow({
   row,
   onSave,
+  onDelete,
 }: {
   row: ReportQuestion;
   onSave: (patch: Partial<ReportQuestion>) => Promise<void>;
+  onDelete: () => void;
 }) {
   const [question, setQuestion] = useState(row.question);
   const [initialValue, setInitialValue] = useState(row.initial_value || '');
@@ -211,14 +240,20 @@ function QuestionRow({
           {row.is_active ? '有効' : '停止'}
         </span>
       </td>
-      <td className="p-2.5 text-center">
+      <td className="p-2.5 text-center whitespace-nowrap">
         <button
           onClick={() => onSave({ is_active: !row.is_active })}
-          className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold ${
+          className={`text-xs px-2.5 py-1 border-1.5 border-ink font-bold mr-1.5 ${
             row.is_active ? 'text-accent border-accent' : ''
           }`}
         >
           {row.is_active ? '停止' : '復帰'}
+        </button>
+        <button
+          onClick={onDelete}
+          className="text-xs px-2.5 py-1 border-1.5 border-accent text-paper bg-accent font-bold"
+        >
+          削除
         </button>
       </td>
     </tr>
