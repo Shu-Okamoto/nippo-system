@@ -29,6 +29,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Link href="/" className="font-mincho text-lg font-extrabold">日報システム</Link>
           <nav className="flex gap-1 text-sm font-bold">
             <Link href="/dashboard" className="px-3 py-1 border-2 border-ink hover:bg-paper2">ダッシュボード</Link>
+            <Link href="/monthly" className="px-3 py-1 border-2 border-ink hover:bg-paper2">月間レポート</Link>
             <Link href="/admin" className="px-3 py-1 border-2 border-ink hover:bg-paper2">マスタ管理</Link>
           </nav>
         </div>
