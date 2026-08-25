@@ -28,12 +28,17 @@ export default function Home() {
         <ul className="space-y-2">
           <li>
             <Link href="/dashboard" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
-              ▸ 本部ダッシュボード
+              ▸ 本部ダッシュボード <span className="font-mono text-xs ml-2 text-muted">/dashboard</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/monthly" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
+              ▸ 月間レポート <span className="font-mono text-xs ml-2 text-muted">/monthly</span>
             </Link>
           </li>
           <li>
             <Link href="/admin" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
-              ▸ マスタ管理
+              ▸ マスタ管理 <span className="font-mono text-xs ml-2 text-muted">/admin</span>
             </Link>
           </li>
           <li>
