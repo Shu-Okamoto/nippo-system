@@ -205,10 +205,26 @@ export function MonthlyView() {
     return [...masters, ...manuals]
       .map((m) => {
         const cells = days.map((date) => bucket[`${shiftStoreId}|${m.key}|${date}`] || 0);
-        return { ...m, cells, total: cells.reduce((a, b) => a + b, 0) };
+        const total = cells.reduce((a, b) => a + b, 0);
+
+        // 人時売平均: 出勤日の店舗人時売を、本人の勤務時間で加重平均する
+        // (長く入った日の人時売ほど強く効く)
+        let weighted = 0;
+        let weightHours = 0;
+        cells.forEach((h, i) => {
+          if (h <= 0) return;
+          const nb = salesRows[i]?.perStore[shiftStoreId]?.ninjibai;
+          if (nb === null || nb === undefined) return;
+          weighted += nb * h;
+          weightHours += h;
+        });
+        const avgNinjibai = weightHours > 0 ? Math.round(weighted / weightHours) : null;
+
+        return { ...m, cells, total, avgNinjibai };
       })
       .filter((m) => m.total > 0 || m.key.startsWith('s'))
-      .sort((a, b) => a.sort - b.sort);
+      // 合計時間数が多い順。同時間ならマスタの並び順で安定させる
+      .sort((a, b) => b.total - a.total || a.sort - b.sort);
   })();
 
   const shiftDayTotals = days.map((_, i) =>
@@ -415,12 +431,16 @@ export function MonthlyView() {
                     </th>
                   ))}
                   <th className="p-2 bg-accent font-mincho min-w-[56px]">合計</th>
+                  <th className="p-2 bg-accent font-mincho min-w-[72px] border-l border-paper/30">
+                    <div>人時売</div>
+                    <div className="text-[9px] font-normal opacity-70">平均</div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {shiftRowsForStore.length === 0 ? (
                   <tr>
-                    <td colSpan={days.length + 2} className="p-6 text-center text-muted font-mono">
+                    <td colSpan={days.length + 3} className="p-6 text-center text-muted font-mono">
                       この月のシフトデータはありません
                     </td>
                   </tr>
@@ -443,6 +463,9 @@ export function MonthlyView() {
                       <td className="p-2 font-mono text-right font-extrabold border-l border-ink">
                         {m.total.toFixed(1)}
                       </td>
+                      <td className="p-2 font-mono text-right font-bold text-accent border-l border-ink">
+                        {m.avgNinjibai !== null ? m.avgNinjibai.toLocaleString('ja-JP') : '—'}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -458,6 +481,13 @@ export function MonthlyView() {
                     ))}
                     <td className="p-2 font-mono text-right text-sm border-l border-ink">
                       {shiftGrandTotal.toFixed(1)}
+                    </td>
+                    <td className="p-2 font-mono text-right text-sm text-accent border-l border-ink">
+                      {shiftStoreId !== null &&
+                      monthTotals[shiftStoreId]?.ninjibai !== null &&
+                      monthTotals[shiftStoreId]?.ninjibai !== undefined
+                        ? monthTotals[shiftStoreId].ninjibai!.toLocaleString('ja-JP')
+                        : '—'}
                     </td>
                   </tr>
                 </tfoot>
