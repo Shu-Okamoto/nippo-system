@@ -529,7 +529,7 @@ export function PastReportEditor({ slug, date }: { slug: string; date: string })
 
       <Section label="気づき・残数" hideTitle>
         <TextArea
-          label="患菜残(14時時点)"
+          label="惣菜残(14時時点)"
           value={report.sozai_zan}
           onChange={(v) => updateReport({ sozai_zan: v })}
         />
