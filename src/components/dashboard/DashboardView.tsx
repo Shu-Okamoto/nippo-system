@@ -257,7 +257,7 @@ export function DashboardView() {
                     )}
                     {r.sozai_zan && (
                       <div className="mt-1">
-                        <b className="font-mincho text-accent mr-2">患菜残(14時時点)</b>
+                        <b className="font-mincho text-accent mr-2">惣菜残(14時時点)</b>
                         {r.sozai_zan}
                       </div>
                     )}
