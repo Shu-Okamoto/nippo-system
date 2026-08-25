@@ -20,6 +20,11 @@ type ShiftCell = Record<string, number>;
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
+// 表記ゆれで別人扱いにならないよう、前後の空白と全角/半角スペースを除去して比較する
+function normalizeName(name: string): string {
+  return name.replace(/[\s　]/g, '');
+}
+
 function monthRange(month: string): { start: string; end: string; days: string[] } {
   const [y, m] = month.split('-').map(Number);
   const last = new Date(y, m, 0).getDate();
@@ -58,12 +63,22 @@ export function MonthlyView() {
     setStores(storeList);
     setShiftStoreId((prev) => prev ?? storeList[0]?.id ?? null);
 
+    // 退職者(is_active=false)も取得する。過去シフトが staff_id で紐づいている
+    // 場合、除外すると月間表からその人の時間が丸ごと消えてしまうため。
     const { data: staffData } = await supabase
       .from('staff')
       .select('*')
-      .eq('is_active', true)
       .order('sort_order');
-    setStaffList((staffData || []) as Staff[]);
+    const allStaff = (staffData || []) as Staff[];
+    setStaffList(allStaff);
+
+    // 手入力名 → スタッフマスタ id の逆引き(店舗ごと)
+    // 同じ人でも日によって「マスタから選択」「手入力」が混在すると
+    // 行が分かれてしまうため、名前一致でマスタ側に寄せる
+    const nameToStaffId = new Map<string, number>();
+    for (const s of allStaff) {
+      nameToStaffId.set(`${s.store_id}|${normalizeName(s.name)}`, s.id);
+    }
 
     const { data: kpi } = await supabase
       .from('daily_kpi')
@@ -96,7 +111,15 @@ export function MonthlyView() {
     for (const sh of (shiftRows || []) as ShiftEntry[]) {
       const meta = reportMeta.get(sh.daily_report_id);
       if (!meta) continue;
-      const staffKey = sh.staff_id !== null ? `s${sh.staff_id}` : `m${sh.staff_name_manual || ''}`;
+      // 手入力名がマスタ名と一致すればマスタ側のキーに統合する
+      let staffKey: string;
+      if (sh.staff_id !== null) {
+        staffKey = `s${sh.staff_id}`;
+      } else {
+        const manual = normalizeName(sh.staff_name_manual || '');
+        const matched = nameToStaffId.get(`${meta.storeId}|${manual}`);
+        staffKey = matched !== undefined ? `s${matched}` : `m${manual}`;
+      }
       const key = `${meta.storeId}|${staffKey}|${meta.date}`;
       const hours = shiftMinutes(sh) / 60;
       const bucket = nextShiftMap[sh.entry_type];
@@ -187,7 +210,12 @@ export function MonthlyView() {
     const bucket = shiftMap[shiftTab];
     const masters = staffList
       .filter((s) => s.store_id === shiftStoreId)
-      .map((s) => ({ key: `s${s.id}`, name: s.name, sort: s.sort_order }));
+      .map((s) => ({
+        key: `s${s.id}`,
+        name: s.name,
+        sort: s.sort_order,
+        isActive: s.is_active,
+      }));
 
     // マスタに無い手入力メンバーを拾う
     const manualKeys = new Set<string>();
@@ -200,6 +228,7 @@ export function MonthlyView() {
       key: k,
       name: k.slice(1) || '(未設定)',
       sort: 9999,
+      isActive: true,
     }));
 
     return [...masters, ...manuals]
@@ -222,7 +251,8 @@ export function MonthlyView() {
 
         return { ...m, cells, total, avgNinjibai };
       })
-      .filter((m) => m.total > 0 || m.key.startsWith('s'))
+      // 在籍中のマスタは0時間でも行を残す。退職者は実績がある月だけ出す
+      .filter((m) => m.total > 0 || (m.key.startsWith('s') && m.isActive))
       // 合計時間数が多い順。同時間ならマスタの並び順で安定させる
       .sort((a, b) => b.total - a.total || a.sort - b.sort);
   })();
