@@ -19,6 +19,8 @@ export type Staff = {
   role: StaffRole;
   sort_order: number;
   is_active: boolean;
+  // freee人事労務の従業員ID。未設定なら打刻は freee に送られない
+  freee_employee_id: number | null;
 };
 
 export type Product = {
@@ -77,6 +79,31 @@ export type ReportQuestion = {
   sort_order: number;
   is_active: boolean;
   initial_value: string | null;
+};
+
+// 勤怠打刻
+export type ClockEventType = 'clock_in' | 'break_begin' | 'break_end' | 'clock_out';
+
+// 打刻画面で使う「そのメンバーの今の状態」。none = 未出勤
+export type ClockState = ClockEventType | 'none';
+
+export type ClockMember = {
+  staff_id: number;
+  name: string;
+  role: StaffRole;
+  sort_order: number;
+  work_date: string;
+  last_event: ClockState;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  break_minutes: number | null;
+};
+
+export type ClockBoard = {
+  store_name: string;
+  today: string;
+  server_time: string;
+  members: ClockMember[];
 };
 
 export type ReportAnswer = {

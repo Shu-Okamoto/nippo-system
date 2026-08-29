@@ -16,8 +16,18 @@ export default function Home() {
             </Link>
           </li>
           <li>
+            <Link href="/store/nishi/clock" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
+              ▸ 西店 勤怠打刻 <span className="font-mono text-xs ml-2 text-muted">/store/nishi/clock</span>
+            </Link>
+          </li>
+          <li>
             <Link href="/store/minami/today" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
               ▸ 南店 日報入力 <span className="font-mono text-xs ml-2 text-muted">/store/minami/today</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/store/minami/clock" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
+              ▸ 南店 勤怠打刻 <span className="font-mono text-xs ml-2 text-muted">/store/minami/clock</span>
             </Link>
           </li>
         </ul>
