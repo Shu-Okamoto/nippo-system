@@ -122,3 +122,88 @@ dx スキーマを Exposed schemas に追加する必要はありません(SECUR
 
 既存の `get_today_full` / `save_daily_report_full` はそのまま残しており、
 スタッフ画面 `/store/<slug>/today` の動作には影響しない。
+
+---
+
+## Step 7 — 勤怠打刻(タイムクロック)
+
+`11_time_clock.sql` を移行先 SQL Editor で1回実行する。
+
+追加されるもの:
+
+| 種別 | 名前 | 用途 |
+|---|---|---|
+| テーブル | `nippo.time_clock_events` | 打刻イベントの追記専用ログ |
+| テーブル | `nippo.freee_tokens` | freee OAuth トークン(**RLS 有効・anon 遮断**) |
+| 列 | `nippo.staff.freee_employee_id` | freee人事労務の従業員ID |
+| 関数 | `punch(slug, staff_id, event_type)` | 打刻を記録し実績シフトに反映 |
+| 関数 | `get_clock_board(slug)` | 打刻画面用の当日状態 |
+| 関数 | `void_punch(event_id)` | 誤打刻の取消(管理画面から) |
+| 関数 | `rebuild_actual_shift(...)` | イベントログから実績シフトを再構築 |
+
+### 設計メモ
+
+- 打刻は `shift_entries`(`entry_type='actual'`)に自動反映される。
+  既存のダッシュボード・月間レポートは変更なしで実績を拾う。
+- イベントログが唯一の真実で、`shift_entries` はその射影。
+  取消すると実績シフトも組み立て直される。
+- 勤務日は **日本時間(Asia/Tokyo)の当日固定**。営業が 9-17 時で
+  日跨ぎしないため、未退勤セッションを翌日に引き継ぐ処理はしない。
+- 休憩が2回以上ある日は `break_start` / `break_end` を空にし、合計を
+  `break_minutes` に入れる。アプリの `shiftMinutes()` は両方揃っていると
+  そちらを優先して1回分しか引かないため。
+
+### 打刻画面
+
+`/store/<slug>/clock`(認証なし・店舗の共有端末を想定)。
+トップページからもリンクしている。
+
+---
+
+## Step 8(オプション)— freee人事労務 連携
+
+打刻を freee人事労務 に送信する場合のみ設定する。**未設定でも打刻機能は動く**。
+
+### 1. freee アプリを作成
+
+freee アプリストアで開発者向けアプリを作成し、Client ID / Client Secret を取得。
+必要スコープ: **人事労務(hr)の打刻登録**。
+
+### 2. リフレッシュトークンを取得
+
+OAuth 認可フローを一度手動で通し、`refresh_token` を取得する。
+
+### 3. Vercel の環境変数に設定
+
+```
+SUPABASE_SERVICE_ROLE_KEY=<Supabase の service_role キー>
+FREEE_CLIENT_ID=<Client ID>
+FREEE_CLIENT_SECRET=<Client Secret>
+FREEE_COMPANY_ID=<事業所ID>
+FREEE_INITIAL_REFRESH_TOKEN=<手順2で取得した refresh_token>
+CRON_SECRET=<任意の文字列>   # 定期実行する場合のみ
+```
+
+いずれも **`NEXT_PUBLIC_` を付けない**こと(付けるとブラウザに露出する)。
+
+`FREEE_INITIAL_REFRESH_TOKEN` は初期化用の種。freee はリフレッシュトークンを
+毎回ローテーションするため、一度同期に成功したら以降は `nippo.freee_tokens`
+に保存された値が使われる。
+
+### 4. スタッフに freee 従業員ID を設定
+
+管理画面 → スタッフマスタ → 「freee従業員ID」列に入力。
+**未設定のスタッフの打刻は送信されず `対象外` になる**。
+
+### 5. 送信する
+
+管理画面 → 勤怠打刻タブ → 「freee に送信」ボタン。
+
+定期実行したい場合は `vercel.json` に Cron を追加し、
+`POST /api/freee/sync` をヘッダ `x-cron-secret: <CRON_SECRET>` 付きで叩く。
+
+### 認証について
+
+`/api/freee/sync` は人事データを外部送信するため、
+`x-cron-secret` ヘッダか Supabase のログイン済みアクセストークンが必要。
+無認証では 401 を返す。

@@ -90,6 +90,7 @@ export function StaffMaster() {
             <th className="p-2.5 text-left">所属店舗</th>
             <th className="p-2.5 text-left">区分</th>
             <th className="p-2.5 text-center">並び順</th>
+            <th className="p-2.5 text-center w-32">freee従業員ID</th>
             <th className="p-2.5 text-center">状態</th>
             <th className="p-2.5 text-center w-40">操作</th>
           </tr>
@@ -108,6 +109,9 @@ export function StaffMaster() {
                 </span>
               </td>
               <td className="p-2.5 text-center font-mono">{r.sort_order}</td>
+              <td className="p-2 text-center">
+                <FreeeIdInput row={r} onSaved={load} />
+              </td>
               <td className="p-2.5 text-center">
                 <span className={`inline-block px-2 py-0.5 text-xs font-bold border-1.5 border-ink ${
                   r.is_active ? 'bg-paper2' : 'bg-stone-300'
@@ -171,5 +175,54 @@ export function StaffMaster() {
         </div>
       </div>
     </div>
+  );
+}
+
+// freee人事労務の従業員ID。フォーカスが外れた時に保存する
+function FreeeIdInput({ row, onSaved }: { row: Staff; onSaved: () => void }) {
+  const [value, setValue] = useState(
+    row.freee_employee_id === null || row.freee_employee_id === undefined
+      ? ''
+      : String(row.freee_employee_id)
+  );
+
+  useEffect(() => {
+    setValue(
+      row.freee_employee_id === null || row.freee_employee_id === undefined
+        ? ''
+        : String(row.freee_employee_id)
+    );
+  }, [row.id, row.freee_employee_id]);
+
+  const save = async () => {
+    const trimmed = value.trim();
+    const next = trimmed === '' ? null : Number(trimmed);
+    if (next !== null && !Number.isInteger(next)) {
+      alert('freee従業員IDは整数で入力してください');
+      return;
+    }
+    if (next === (row.freee_employee_id ?? null)) return;
+
+    const { error } = await supabase
+      .from('staff')
+      .update({ freee_employee_id: next })
+      .eq('id', row.id);
+    if (error) {
+      alert(`保存できませんでした: ${error.message}`);
+      return;
+    }
+    onSaved();
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={value}
+      onChange={(e) => setValue(e.target.value.replace(/[^\d]/g, ''))}
+      onBlur={save}
+      placeholder="未設定"
+      className="w-24 p-1 border-1.5 border-ink bg-paper text-xs font-mono text-center"
+    />
   );
 }

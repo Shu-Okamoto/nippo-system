@@ -4,8 +4,9 @@ import { StoresMaster } from '@/components/admin/StoresMaster';
 import { StaffMaster } from '@/components/admin/StaffMaster';
 import { ProductsMaster } from '@/components/admin/ProductsMaster';
 import { QuestionsMaster } from '@/components/admin/QuestionsMaster';
+import { AttendanceAdmin } from '@/components/admin/AttendanceAdmin';
 
-type Tab = 'store' | 'staff' | 'product' | 'question';
+type Tab = 'store' | 'staff' | 'product' | 'question' | 'attendance';
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('store');
@@ -23,6 +24,7 @@ export default function AdminPage() {
           { k: 'staff' as Tab,    label: 'スタッフマスタ' },
           { k: 'product' as Tab,  label: '商品マスタ' },
           { k: 'question' as Tab, label: '質問マスタ' },
+          { k: 'attendance' as Tab, label: '勤怠打刻' },
         ].map((t) => (
           <button
             key={t.k}
@@ -40,6 +42,7 @@ export default function AdminPage() {
       {tab === 'staff'    && <StaffMaster />}
       {tab === 'product'  && <ProductsMaster />}
       {tab === 'question' && <QuestionsMaster />}
+      {tab === 'attendance' && <AttendanceAdmin />}
     </div>
   );
 }
