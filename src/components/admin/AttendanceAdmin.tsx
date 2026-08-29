@@ -102,11 +102,20 @@ export function AttendanceAdmin() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: st } = await supabase.from('stores').select('*').order('id');
+    // 停止中の店舗は表示しない。打刻系の RPC も is_active な店舗しか
+    // 受け付けないため、選べてしまうとエラーになる
+    const { data: st } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('is_active', true)
+      .order('id');
     const storeList = (st || []) as Store[];
     setStores(storeList);
-    const sid = storeId ?? storeList[0]?.id ?? null;
-    if (storeId === null && sid !== null) setStoreId(sid);
+
+    // 選択中の店舗が停止された場合は先頭の稼働店舗に戻す
+    const stillActive = storeList.some((s) => s.id === storeId);
+    const sid = stillActive ? storeId : storeList[0]?.id ?? null;
+    if (sid !== storeId) setStoreId(sid);
 
     if (sid === null) {
       setRows([]);
