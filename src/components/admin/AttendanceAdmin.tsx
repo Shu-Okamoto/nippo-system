@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { shiftMinutes } from '@/lib/calc';
-import type { ClockEventType, ShiftEntry, Staff, Store } from '@/lib/types';
+import type { ClockEventType, Staff, Store } from '@/lib/types';
 
 const EVENT_LABEL: Record<ClockEventType, string> = {
   clock_in: '出勤',
@@ -39,12 +38,12 @@ type EventRow = {
 };
 
 type SummaryRow = {
-  staff_id: number | null;
+  staff_id: number;
   name: string;
-  start: string | null;
-  end: string | null;
-  breakMin: number;
-  hours: number;
+  start_time: string | null;
+  end_time: string | null;
+  break_minutes: number;
+  work_minutes: number | null;
 };
 
 type SyncInfo = {
@@ -132,34 +131,14 @@ export function AttendanceAdmin() {
       setRows((data || []) as EventRow[]);
     }
 
-    // 打刻から組み立てられた実績シフト(修正結果の確認用)
-    const { data: rep } = await supabase
-      .from('daily_reports')
-      .select('id')
-      .eq('store_id', sid)
-      .eq('report_date', date)
-      .maybeSingle();
-
-    if (rep?.id) {
-      const { data: shifts } = await supabase
-        .from('shift_entries')
-        .select('*, staff(name, sort_order)')
-        .eq('daily_report_id', rep.id)
-        .eq('entry_type', 'actual');
-
-      const list: SummaryRow[] = ((shifts || []) as any[])
-        .map((s) => ({
-          staff_id: s.staff_id,
-          name: s.staff?.name || s.staff_name_manual || '(未設定)',
-          start: s.start_time ? String(s.start_time).slice(0, 5) : null,
-          end: s.end_time ? String(s.end_time).slice(0, 5) : null,
-          breakMin: s.break_minutes ?? 0,
-          hours: shiftMinutes(s as ShiftEntry) / 60,
-          sort: s.staff?.sort_order ?? 9999,
-        }))
-        .sort((a, b) => a.sort - b.sort)
-        .map(({ sort, ...r }) => r);
-      setSummary(list);
+    // 打刻の日次集計。日報の実績入力とは無関係にイベントログから計算する
+    const storeSlug = storeList.find((s) => s.id === sid)?.slug;
+    if (storeSlug) {
+      const { data: sum } = await supabase.rpc('get_attendance_summary', {
+        p_slug: storeSlug,
+        p_date: date,
+      });
+      setSummary(((sum as any)?.members ?? []) as SummaryRow[]);
     } else {
       setSummary([]);
     }
@@ -232,7 +211,7 @@ export function AttendanceAdmin() {
       r.freee_status === 'sent'
         ? '\n\n※この打刻は freee に送信済みです。freee 側は自動で消えないので手動で削除してください。'
         : '';
-    if (!confirm(`${label} を削除します。実績シフトも組み立て直されます。${warn}`)) return;
+    if (!confirm(`${label} を削除します。${warn}`)) return;
     await run(() => supabase.rpc('delete_punch', { p_event_id: r.id }), '削除できませんでした');
   };
 
@@ -346,7 +325,10 @@ export function AttendanceAdmin() {
       {summary.length > 0 && (
         <div className="mb-5 border-2 border-ink bg-paper2">
           <div className="px-3 py-2 bg-ink text-paper font-mincho font-bold text-sm">
-            この日の実績(打刻から自動計算)
+            この日の勤怠集計(打刻から計算)
+            <span className="ml-2 text-[10px] font-normal opacity-70">
+              ※日報の実績入力とは別管理です
+            </span>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -359,15 +341,19 @@ export function AttendanceAdmin() {
               </tr>
             </thead>
             <tbody>
-              {summary.map((s, i) => (
-                <tr key={i} className="border-b border-dotted border-stone-300">
+              {summary.map((s) => (
+                <tr key={s.staff_id} className="border-b border-dotted border-stone-300">
                   <td className="p-2 font-bold">{s.name}</td>
-                  <td className="p-2 text-center font-mono">{s.start ?? '—'}</td>
+                  <td className="p-2 text-center font-mono">{s.start_time ?? '—'}</td>
                   <td className="p-2 text-center font-mono">
-                    {s.end ?? <span className="text-accent font-bold">未</span>}
+                    {s.end_time ?? <span className="text-accent font-bold">未</span>}
                   </td>
-                  <td className="p-2 text-center font-mono">{s.breakMin ? `${s.breakMin}分` : '—'}</td>
-                  <td className="p-2 text-right font-mono font-bold">{s.hours.toFixed(1)}h</td>
+                  <td className="p-2 text-center font-mono">
+                    {s.break_minutes ? `${s.break_minutes}分` : '—'}
+                  </td>
+                  <td className="p-2 text-right font-mono font-bold">
+                    {s.work_minutes !== null ? `${(s.work_minutes / 60).toFixed(1)}h` : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
