@@ -47,6 +47,11 @@ export default function Home() {
             </Link>
           </li>
           <li>
+            <Link href="/attendance" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
+              ▸ 勤怠管理 <span className="font-mono text-xs ml-2 text-muted">/attendance</span>
+            </Link>
+          </li>
+          <li>
             <Link href="/admin" className="block border-2 border-ink p-3 hover:bg-paper2 font-bold">
               ▸ マスタ管理 <span className="font-mono text-xs ml-2 text-muted">/admin</span>
             </Link>
