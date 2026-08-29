@@ -65,6 +65,13 @@ function todayJst(): string {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 }
 
+// "YYYY-MM-DD" を日数ぶんずらす。タイムゾーンの影響を避けるため UTC で計算する
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function AttendanceAdmin() {
   const [stores, setStores] = useState<Store[]>([]);
   const [storeId, setStoreId] = useState<number | null>(null);
@@ -179,6 +186,12 @@ export function AttendanceAdmin() {
     }
     await load();
     return true;
+  };
+
+  const goToDate = (next: string) => {
+    if (!next) return;
+    setDate(next);
+    setEditId(null);
   };
 
   const startEdit = (r: EventRow) => {
@@ -296,15 +309,34 @@ export function AttendanceAdmin() {
             </button>
           ))}
         </div>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => {
-            setDate(e.target.value);
-            setEditId(null);
-          }}
-          className="border-2 border-ink p-2 font-mono"
-        />
+        <div className="flex items-center border-2 border-ink">
+          <button
+            onClick={() => goToDate(shiftDate(date, -1))}
+            className="px-3 py-2 font-bold border-r-2 border-ink hover:bg-paper2"
+            title="前日"
+          >
+            ‹
+          </button>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => goToDate(e.target.value)}
+            className="p-2 font-mono border-r-2 border-ink"
+          />
+          <button
+            onClick={() => goToDate(shiftDate(date, 1))}
+            className="px-3 py-2 font-bold border-r-2 border-ink hover:bg-paper2"
+            title="翌日"
+          >
+            ›
+          </button>
+          <button
+            onClick={() => goToDate(todayJst())}
+            className="px-3 py-2 font-bold text-sm hover:bg-paper2"
+          >
+            今日
+          </button>
+        </div>
         <button onClick={load} className="px-3 py-2 border-2 border-ink font-bold text-sm">
           ↻ 更新
         </button>
