@@ -46,6 +46,23 @@ type SummaryRow = {
   work_minutes: number | null;
 };
 
+type MonthDay = {
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  break_minutes: number;
+  work_minutes: number | null;
+  event_count: number;
+};
+
+type MonthData = {
+  staff_id: number;
+  staff_name: string;
+  days: MonthDay[];
+  total_work_minutes: number;
+  work_days: number;
+};
+
 type SyncInfo = {
   configured: boolean;
   pending?: number;
@@ -73,6 +90,7 @@ function shiftDate(date: string, days: number): string {
 }
 
 export function AttendanceAdmin() {
+  const [view, setView] = useState<'day' | 'month'>('day');
   const [stores, setStores] = useState<Store[]>([]);
   const [storeId, setStoreId] = useState<number | null>(null);
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -83,6 +101,15 @@ export function AttendanceAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // 月別ビュー(メンバー1人の1か月)
+  const [month, setMonth] = useState(() => todayJst().slice(0, 7));
+  const [monthStaffId, setMonthStaffId] = useState<number | null>(null);
+  const [monthData, setMonthData] = useState<MonthData | null>(null);
+  const [monthLoading, setMonthLoading] = useState(false);
+
+  // 月別から日別へ移った時に、その人だけを表示するための絞り込み
+  const [focusStaffId, setFocusStaffId] = useState<number | null>(null);
 
   // インライン編集
   const [editId, setEditId] = useState<number | null>(null);
@@ -197,10 +224,50 @@ export function AttendanceAdmin() {
     return true;
   };
 
+  // 月別ビューの読み込み
+  const loadMonth = useCallback(async () => {
+    if (!slug || monthStaffId === null) {
+      setMonthData(null);
+      return;
+    }
+    setMonthLoading(true);
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+    const { data, error: e } = await supabase.rpc('get_attendance_month', {
+      p_slug: slug,
+      p_staff_id: monthStaffId,
+      p_from: from,
+      p_to: to,
+    });
+    if (e) {
+      setError(e.message);
+      setMonthData(null);
+    } else {
+      setError(null);
+      setMonthData(data as MonthData);
+    }
+    setMonthLoading(false);
+  }, [slug, monthStaffId, month]);
+
+  useEffect(() => {
+    if (view === 'month') loadMonth();
+  }, [view, loadMonth]);
+
   const goToDate = (next: string) => {
     if (!next) return;
     setDate(next);
     setEditId(null);
+  };
+
+  // 月別の行クリック → その日・そのメンバーの編集画面へ
+  const openDayDetail = (d: MonthDay) => {
+    setDate(d.date);
+    setFocusStaffId(monthStaffId);
+    setAddStaffId(monthStaffId);
+    setEditId(null);
+    setView('day');
   };
 
   const startEdit = (r: EventRow) => {
@@ -295,11 +362,33 @@ export function AttendanceAdmin() {
     load();
   };
 
-  const visible = showVoided ? rows : rows.filter((r) => !r.is_voided);
-  const voidedCount = rows.filter((r) => r.is_voided).length;
+  const scoped = focusStaffId === null ? rows : rows.filter((r) => r.staff_id === focusStaffId);
+  const visible = showVoided ? scoped : scoped.filter((r) => !r.is_voided);
+  const voidedCount = scoped.filter((r) => r.is_voided).length;
+  const focusName = staffList.find((s) => s.id === focusStaffId)?.name;
+  const visibleSummary =
+    focusStaffId === null ? summary : summary.filter((s) => s.staff_id === focusStaffId);
 
   return (
     <div>
+      {/* 日別 / 月別 の切替 */}
+      <div className="flex border-2 border-ink mb-4 w-fit">
+        {([
+          { k: 'day' as const, label: '日別(店舗)' },
+          { k: 'month' as const, label: '月別(メンバー)' },
+        ]).map((v) => (
+          <button
+            key={v.k}
+            onClick={() => setView(v.k)}
+            className={`px-5 py-2.5 font-mincho font-bold text-sm border-r-2 border-ink last:border-r-0 ${
+              view === v.k ? 'bg-ink text-paper' : 'bg-paper'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap gap-3 items-center mb-4">
         <div className="flex border-2 border-ink">
           {stores.map((s) => (
@@ -309,6 +398,8 @@ export function AttendanceAdmin() {
                 setStoreId(s.id);
                 setEditId(null);
                 setAddStaffId(null);
+                setMonthStaffId(null);
+                setFocusStaffId(null);
               }}
               className={`px-4 py-2 font-mincho font-bold text-sm border-r-2 border-ink last:border-r-0 ${
                 storeId === s.id ? 'bg-ink text-paper' : 'bg-paper'
@@ -318,52 +409,113 @@ export function AttendanceAdmin() {
             </button>
           ))}
         </div>
-        <div className="flex items-center border-2 border-ink">
+        {view === 'day' ? (
+          <>
+            <div className="flex items-center border-2 border-ink">
+              <button
+                onClick={() => goToDate(shiftDate(date, -1))}
+                className="px-3 py-2 font-bold border-r-2 border-ink hover:bg-paper2"
+                title="前日"
+              >
+                ‹
+              </button>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => goToDate(e.target.value)}
+                className="p-2 font-mono border-r-2 border-ink"
+              />
+              <button
+                onClick={() => goToDate(shiftDate(date, 1))}
+                className="px-3 py-2 font-bold border-r-2 border-ink hover:bg-paper2"
+                title="翌日"
+              >
+                ›
+              </button>
+              <button
+                onClick={() => goToDate(todayJst())}
+                className="px-3 py-2 font-bold text-sm hover:bg-paper2"
+              >
+                今日
+              </button>
+            </div>
+            <button onClick={load} className="px-3 py-2 border-2 border-ink font-bold text-sm">
+              ↻ 更新
+            </button>
+            <label className="flex items-center gap-1.5 text-sm font-bold">
+              <input
+                type="checkbox"
+                checked={showVoided}
+                onChange={(e) => setShowVoided(e.target.checked)}
+                className="w-4 h-4 border-2 border-ink"
+              />
+              削除済も表示{voidedCount > 0 && `(${voidedCount})`}
+            </label>
+          </>
+        ) : (
+          <>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="border-2 border-ink p-2 font-mono"
+            />
+            <select
+              value={monthStaffId ?? ''}
+              onChange={(e) => setMonthStaffId(e.target.value ? Number(e.target.value) : null)}
+              className="p-2 border-2 border-ink bg-paper text-sm min-w-[180px]"
+            >
+              <option value="">メンバーを選択</option>
+              {staffList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.is_active ? '' : '(停止中)'}
+                </option>
+              ))}
+            </select>
+            <button onClick={loadMonth} className="px-3 py-2 border-2 border-ink font-bold text-sm">
+              ↻ 更新
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* 月別から来た時の絞り込み表示 */}
+      {view === 'day' && focusStaffId !== null && (
+        <div className="mb-4 flex items-center gap-3 px-3 py-2 border-2 border-ink bg-gold">
+          <span className="font-mincho font-bold text-sm">
+            {focusName ?? `ID:${focusStaffId}`} さんで絞り込み中
+          </span>
           <button
-            onClick={() => goToDate(shiftDate(date, -1))}
-            className="px-3 py-2 font-bold border-r-2 border-ink hover:bg-paper2"
-            title="前日"
+            onClick={() => setFocusStaffId(null)}
+            className="text-xs px-2.5 py-1 border-1.5 border-ink font-bold bg-paper hover:bg-paper2"
           >
-            ‹
+            × 解除して全員表示
           </button>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => goToDate(e.target.value)}
-            className="p-2 font-mono border-r-2 border-ink"
-          />
           <button
-            onClick={() => goToDate(shiftDate(date, 1))}
-            className="px-3 py-2 font-bold border-r-2 border-ink hover:bg-paper2"
-            title="翌日"
+            onClick={() => setView('month')}
+            className="text-xs px-2.5 py-1 border-1.5 border-ink font-bold bg-paper hover:bg-paper2"
           >
-            ›
-          </button>
-          <button
-            onClick={() => goToDate(todayJst())}
-            className="px-3 py-2 font-bold text-sm hover:bg-paper2"
-          >
-            今日
+            ← 月別に戻る
           </button>
         </div>
-        <button onClick={load} className="px-3 py-2 border-2 border-ink font-bold text-sm">
-          ↻ 更新
-        </button>
-        <label className="flex items-center gap-1.5 text-sm font-bold">
-          <input
-            type="checkbox"
-            checked={showVoided}
-            onChange={(e) => setShowVoided(e.target.checked)}
-            className="w-4 h-4 border-2 border-ink"
-          />
-          削除済も表示{voidedCount > 0 && `(${voidedCount})`}
-        </label>
-      </div>
+      )}
 
       {error && <div className="mb-3 text-sm text-accent font-bold">⚠ {error}</div>}
 
+      {view === 'month' && (
+        <MonthView
+          data={monthData}
+          loading={monthLoading}
+          staffSelected={monthStaffId !== null}
+          onRowClick={openDayDetail}
+        />
+      )}
+
+      {view === 'day' && (
+      <>
       {/* 修正結果の確認用サマリー */}
-      {summary.length > 0 && (
+      {visibleSummary.length > 0 && (
         <div className="mb-5 border-2 border-ink bg-paper2">
           <div className="px-3 py-2 bg-ink text-paper font-mincho font-bold text-sm">
             この日の勤怠集計(打刻から計算)
@@ -382,7 +534,7 @@ export function AttendanceAdmin() {
               </tr>
             </thead>
             <tbody>
-              {summary.map((s) => (
+              {visibleSummary.map((s) => (
                 <tr key={s.staff_id} className="border-b border-dotted border-stone-300">
                   <td className="p-2 font-bold">{s.name}</td>
                   <td className="p-2 text-center font-mono">{s.start_time ?? '—'}</td>
@@ -577,6 +729,8 @@ export function AttendanceAdmin() {
           <span className="text-xs text-muted">対象日: {date}</span>
         </div>
       </div>
+      </>
+      )}
 
       <div className="mt-6 p-4 bg-paper2 border-2 border-dashed border-ink">
         <b className="font-mincho block mb-2.5">freee人事労務 連携</b>
@@ -610,6 +764,128 @@ export function AttendanceAdmin() {
             {syncResult}
           </pre>
         )}
+      </div>
+    </div>
+  );
+}
+
+const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+// メンバー1人の1か月。行クリックでその日の編集画面に移る
+function MonthView({
+  data,
+  loading,
+  staffSelected,
+  onRowClick,
+}: {
+  data: MonthData | null;
+  loading: boolean;
+  staffSelected: boolean;
+  onRowClick: (d: MonthDay) => void;
+}) {
+  if (!staffSelected) {
+    return (
+      <div className="border-2 border-ink p-10 text-center font-mincho text-muted">
+        メンバーを選択してください
+      </div>
+    );
+  }
+  if (loading) return <div className="p-8 font-mincho">読み込み中…</div>;
+  if (!data) {
+    return (
+      <div className="border-2 border-ink p-10 text-center font-mincho text-muted">
+        データを取得できませんでした
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-3 border-2 border-ink mb-4">
+        <SummaryCell label="メンバー" value={data.staff_name} hero />
+        <SummaryCell label="出勤日数" value={`${data.work_days} 日`} />
+        <SummaryCell
+          label="合計実働"
+          value={`${(data.total_work_minutes / 60).toFixed(1)} h`}
+        />
+      </div>
+
+      <div className="border-2 border-ink bg-paper overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead className="bg-ink text-paper">
+            <tr>
+              <th className="p-2.5 text-left w-28">日付</th>
+              <th className="p-2.5 text-center w-20">出勤</th>
+              <th className="p-2.5 text-center w-20">退勤</th>
+              <th className="p-2.5 text-center w-20">休憩</th>
+              <th className="p-2.5 text-right w-24">実働</th>
+              <th className="p-2.5 text-center w-24">状態</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.days.map((d) => {
+              const wd = new Date(`${d.date}T00:00:00Z`).getUTCDay();
+              const weekend = wd === 0 || wd === 6;
+              const hasEvents = d.event_count > 0;
+              // 出勤しているのに退勤が無い、または打刻が奇数 = 打刻もれの疑い
+              const incomplete = hasEvents && (d.end_time === null || d.event_count % 2 === 1);
+              return (
+                <tr
+                  key={d.date}
+                  onClick={() => onRowClick(d)}
+                  title="クリックでこの日の打刻を編集"
+                  className={`border-b border-dotted border-stone-300 cursor-pointer hover:bg-gold/40 ${
+                    weekend ? 'bg-paper2' : ''
+                  } ${hasEvents ? '' : 'text-stone-400'}`}
+                >
+                  <td className="p-2 font-mono">
+                    {Number(d.date.slice(8, 10))}
+                    <span className="text-[10px] text-muted ml-1">({DAY_NAMES[wd]})</span>
+                  </td>
+                  <td className="p-2 text-center font-mono">{d.start_time ?? '·'}</td>
+                  <td className="p-2 text-center font-mono">{d.end_time ?? '·'}</td>
+                  <td className="p-2 text-center font-mono">
+                    {d.break_minutes ? `${d.break_minutes}分` : '·'}
+                  </td>
+                  <td className="p-2 text-right font-mono font-bold">
+                    {d.work_minutes !== null ? `${(d.work_minutes / 60).toFixed(1)}h` : '·'}
+                  </td>
+                  <td className="p-2 text-center">
+                    {incomplete && (
+                      <span className="inline-block px-2 py-0.5 text-[10px] font-bold border-1.5 border-ink bg-accent text-paper">
+                        打刻もれ
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        行をクリックすると、その日の打刻の編集・追加・削除ができます。
+      </p>
+    </div>
+  );
+}
+
+function SummaryCell({ label, value, hero }: { label: string; value: string; hero?: boolean }) {
+  return (
+    <div
+      className={`p-4 border-r-2 border-ink last:border-r-0 ${
+        hero ? 'bg-ink text-paper' : 'bg-paper2'
+      }`}
+    >
+      <div
+        className={`font-mincho text-[11px] font-bold tracking-widest mb-2 ${
+          hero ? 'opacity-70' : 'text-muted'
+        }`}
+      >
+        {label}
+      </div>
+      <div className={`font-mono text-2xl font-extrabold leading-none ${hero ? 'text-gold' : ''}`}>
+        {value}
       </div>
     </div>
   );
