@@ -108,9 +108,11 @@ export function TimeClock({ slug }: { slug: string }) {
     setPinError(null);
   };
 
+  const requirePin = board?.require_pin ?? true;
+
   const punch = async (type: ClockEventType) => {
     if (!selected || busy) return;
-    if (pin.length < 4) {
+    if (requirePin && pin.length < 4) {
       setPinError('PINを4桁以上入力してください');
       return;
     }
@@ -121,7 +123,7 @@ export function TimeClock({ slug }: { slug: string }) {
       p_slug: slug,
       p_staff_id: selected.staff_id,
       p_event_type: type,
-      p_pin: pin,
+      p_pin: requirePin ? pin : null,
     });
     setBusy(false);
 
@@ -174,6 +176,7 @@ export function TimeClock({ slug }: { slug: string }) {
       {selected ? (
         <PinPad
           member={selected}
+          requirePin={requirePin}
           pin={pin}
           setPin={setPin}
           error={pinError}
@@ -199,14 +202,14 @@ export function TimeClock({ slug }: { slug: string }) {
                   setPinError(null);
                   setSelected(m);
                 }}
-                disabled={!m.has_pin}
+                disabled={requirePin && !m.has_pin}
                 className={`w-full border-2 border-ink flex items-center justify-between gap-3 px-4 py-4 text-left ${
-                  m.has_pin ? 'bg-paper active:bg-gold' : 'bg-stone-100'
+                  !requirePin || m.has_pin ? 'bg-paper active:bg-gold' : 'bg-stone-100'
                 }`}
               >
                 <span className="font-mincho text-lg font-extrabold">
                   {m.name}
-                  {!m.has_pin && (
+                  {requirePin && !m.has_pin && (
                     <span className="ml-2 text-xs font-bold text-accent">PIN未設定</span>
                   )}
                 </span>
@@ -251,6 +254,7 @@ export function TimeClock({ slug }: { slug: string }) {
 // メンバー選択後の PIN 入力 + 打刻
 function PinPad({
   member,
+  requirePin,
   pin,
   setPin,
   error,
@@ -259,6 +263,7 @@ function PinPad({
   onPunch,
 }: {
   member: ClockMember;
+  requirePin: boolean;
   pin: string;
   setPin: (v: string) => void;
   error: string | null;
@@ -267,7 +272,7 @@ function PinPad({
   onPunch: (t: ClockEventType) => void;
 }) {
   const allowed = ALLOWED[member.last_event] ?? [];
-  const ready = pin.length >= 4;
+  const ready = !requirePin || pin.length >= 4;
 
   const push = (d: string) => {
     if (pin.length >= PIN_LENGTH_MAX) return;
@@ -288,20 +293,24 @@ function PinPad({
         </div>
 
         <div className="p-5">
-          <p className="text-sm font-mincho font-bold mb-3">PINを入力してください</p>
+          {requirePin && (
+            <>
+              <p className="text-sm font-mincho font-bold mb-3">PINを入力してください</p>
 
-          <div className="flex items-center justify-center gap-2 mb-4 h-12">
-            {Array.from({ length: PIN_LENGTH_MAX }).map((_, i) => (
-              <span
-                key={i}
-                className={`w-8 h-11 border-2 border-ink flex items-center justify-center font-mono text-2xl font-extrabold ${
-                  i < pin.length ? 'bg-ink text-paper' : 'bg-paper2 text-stone-300'
-                }`}
-              >
-                {i < pin.length ? '●' : ''}
-              </span>
-            ))}
-          </div>
+              <div className="flex items-center justify-center gap-2 mb-4 h-12">
+                {Array.from({ length: PIN_LENGTH_MAX }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={`w-8 h-11 border-2 border-ink flex items-center justify-center font-mono text-2xl font-extrabold ${
+                      i < pin.length ? 'bg-ink text-paper' : 'bg-paper2 text-stone-300'
+                    }`}
+                  >
+                    {i < pin.length ? '●' : ''}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="mb-3 px-3 py-2 border-2 border-accent bg-red-50 text-accent text-sm font-bold text-center">
@@ -309,41 +318,43 @@ function PinPad({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2 mb-5">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
+          {requirePin && (
+            <div className="grid grid-cols-3 gap-2 mb-5">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => push(d)}
+                  disabled={busy}
+                  className="py-5 border-2 border-ink bg-paper font-mono text-2xl font-extrabold active:bg-gold"
+                >
+                  {d}
+                </button>
+              ))}
               <button
-                key={d}
-                onClick={() => push(d)}
+                onClick={() => setPin('')}
+                disabled={busy}
+                className="py-5 border-2 border-ink bg-paper2 font-mincho text-sm font-bold active:bg-gold"
+              >
+                クリア
+              </button>
+              <button
+                onClick={() => push('0')}
                 disabled={busy}
                 className="py-5 border-2 border-ink bg-paper font-mono text-2xl font-extrabold active:bg-gold"
               >
-                {d}
+                0
               </button>
-            ))}
-            <button
-              onClick={() => setPin('')}
-              disabled={busy}
-              className="py-5 border-2 border-ink bg-paper2 font-mincho text-sm font-bold active:bg-gold"
-            >
-              クリア
-            </button>
-            <button
-              onClick={() => push('0')}
-              disabled={busy}
-              className="py-5 border-2 border-ink bg-paper font-mono text-2xl font-extrabold active:bg-gold"
-            >
-              0
-            </button>
-            <button
-              onClick={() => setPin(pin.slice(0, -1))}
-              disabled={busy}
-              className="py-5 border-2 border-ink bg-paper2 font-mincho text-sm font-bold active:bg-gold"
-            >
-              ← 削除
-            </button>
-          </div>
+              <button
+                onClick={() => setPin(pin.slice(0, -1))}
+                disabled={busy}
+                className="py-5 border-2 border-ink bg-paper2 font-mincho text-sm font-bold active:bg-gold"
+              >
+                ← 削除
+              </button>
+            </div>
+          )}
 
-          <div className="border-t-2 border-ink pt-4">
+          <div className={requirePin ? 'border-t-2 border-ink pt-4' : ''}>
             {allowed.length === 0 ? (
               <p className="text-center text-sm font-mincho text-muted py-3">
                 本日は退勤済みです。修正が必要な場合は本部に連絡してください。
