@@ -93,10 +93,21 @@ export type ClockMember = {
   role: StaffRole;
   sort_order: number;
   work_date: string;
+  // PIN 未設定のメンバーは打刻できない(管理画面で発行が必要)
+  has_pin: boolean;
   last_event: ClockState;
   clock_in_at: string | null;
   clock_out_at: string | null;
   break_minutes: number | null;
+};
+
+// スタッフマスタの非公開情報。PIN ハッシュは返らない
+export type StaffPrivate = {
+  staff_id: number;
+  has_pin: boolean;
+  pin_set_at: string | null;
+  locked: boolean;
+  hourly_wage: number | null;
 };
 
 export type ClockBoard = {

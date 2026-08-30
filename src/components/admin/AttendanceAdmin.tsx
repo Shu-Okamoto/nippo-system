@@ -25,6 +25,7 @@ type EventRow = {
   id: number;
   store_id: number;
   staff_id: number;
+  staff_name: string | null;
   work_date: string;
   event_type: ClockEventType;
   event_at: string;
@@ -34,7 +35,6 @@ type EventRow = {
   edited_at: string | null;
   freee_status: string;
   freee_error: string | null;
-  staff: { name: string } | null;
 };
 
 type SummaryRow = {
@@ -159,32 +159,36 @@ export function AttendanceAdmin() {
       .order('sort_order');
     setStaffList((sf || []) as Staff[]);
 
-    const { data, error: e } = await supabase
-      .from('time_clock_events')
-      .select('*, staff(name)')
-      .eq('store_id', sid)
-      .eq('work_date', date)
-      .order('event_at');
+    const storeSlug = storeList.find((s) => s.id === sid)?.slug;
+    if (!storeSlug) {
+      setRows([]);
+      setSummary([]);
+      setLoading(false);
+      return;
+    }
+
+    // 打刻一覧・集計とも SECURITY DEFINER の RPC 経由で取る。
+    // テーブルを直接読むとロールの権限設定に左右されるため
+    const { data: ev, error: e } = await supabase.rpc('get_punch_events', {
+      p_slug: storeSlug,
+      p_date: date,
+      p_include_voided: true,
+    });
 
     if (e) {
       setError(e.message);
       setRows([]);
     } else {
       setError(null);
-      setRows((data || []) as EventRow[]);
+      setRows((((ev as any)?.events ?? []) as EventRow[]));
     }
 
     // 打刻の日次集計。日報の実績入力とは無関係にイベントログから計算する
-    const storeSlug = storeList.find((s) => s.id === sid)?.slug;
-    if (storeSlug) {
-      const { data: sum } = await supabase.rpc('get_attendance_summary', {
-        p_slug: storeSlug,
-        p_date: date,
-      });
-      setSummary(((sum as any)?.members ?? []) as SummaryRow[]);
-    } else {
-      setSummary([]);
-    }
+    const { data: sum } = await supabase.rpc('get_attendance_summary', {
+      p_slug: storeSlug,
+      p_date: date,
+    });
+    setSummary(((sum as any)?.members ?? []) as SummaryRow[]);
 
     setLoading(false);
   }, [storeId, date]);
@@ -295,7 +299,7 @@ export function AttendanceAdmin() {
   };
 
   const removeEvent = async (r: EventRow) => {
-    const label = `${r.staff?.name ?? r.staff_id} さんの ${EVENT_LABEL[r.event_type]} ${jstTime(r.event_at)}`;
+    const label = `${r.staff_name ?? r.staff_id} さんの ${EVENT_LABEL[r.event_type]} ${jstTime(r.event_at)}`;
     const warn =
       r.freee_status === 'sent'
         ? '\n\n※この打刻は freee に送信済みです。freee 側は自動で消えないので手動で削除してください。'
@@ -558,7 +562,20 @@ export function AttendanceAdmin() {
         <div className="p-8 font-mincho">読み込み中…</div>
       ) : visible.length === 0 ? (
         <div className="border-2 border-ink p-10 text-center font-mincho text-muted">
-          この日の打刻はありません
+          {error ? (
+            <span className="text-accent font-bold">
+              打刻を読み込めませんでした: {error}
+            </span>
+          ) : summary.length > 0 ? (
+            // 集計に出ているのに一覧が空 = 取得経路の問題。黙って
+            // 「打刻なし」と出すと誤解を招くので明示する
+            <span className="text-accent font-bold">
+              集計には打刻がありますが一覧を取得できませんでした。
+              SQL(15_punch_list_rpc.sql)が未実行の可能性があります。
+            </span>
+          ) : (
+            'この日の打刻はありません'
+          )}
         </div>
       ) : (
         <table className="w-full border-2 border-ink bg-paper text-sm">
@@ -584,7 +601,7 @@ export function AttendanceAdmin() {
                       autoFocus
                     />
                   </td>
-                  <td className="p-2.5 font-bold">{r.staff?.name ?? `ID:${r.staff_id}`}</td>
+                  <td className="p-2.5 font-bold">{r.staff_name ?? `ID:${r.staff_id}`}</td>
                   <td className="p-2">
                     <select
                       value={editType}
@@ -622,7 +639,7 @@ export function AttendanceAdmin() {
                   <td className={`p-2.5 font-mono ${r.is_voided ? 'line-through' : ''}`}>
                     {jstTime(r.event_at)}
                   </td>
-                  <td className="p-2.5 font-bold">{r.staff?.name ?? `ID:${r.staff_id}`}</td>
+                  <td className="p-2.5 font-bold">{r.staff_name ?? `ID:${r.staff_id}`}</td>
                   <td className="p-2.5">
                     <span className="inline-block px-2 py-0.5 text-xs font-bold border-1.5 border-ink bg-paper2">
                       {EVENT_LABEL[r.event_type]}
