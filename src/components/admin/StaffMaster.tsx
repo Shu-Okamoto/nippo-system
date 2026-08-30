@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Staff, Store, StaffRole } from '@/lib/types';
+import type { Staff, Store, StaffRole, StaffPrivate } from '@/lib/types';
 
 const ROLE_LABEL: Record<StaffRole, string> = { head: '店責', part: 'パート', support: '応援' };
 
@@ -9,6 +9,7 @@ export function StaffMaster() {
   const [rows, setRows] = useState<Staff[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
+  const [privateMap, setPrivateMap] = useState<Record<number, StaffPrivate>>({});
   const [newRow, setNewRow] = useState<{ name: string; store_id: number | null; role: StaffRole }>({
     name: '',
     store_id: null,
@@ -17,12 +18,17 @@ export function StaffMaster() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: s }, { data: st }] = await Promise.all([
+    const [{ data: s }, { data: st }, { data: pv }] = await Promise.all([
       supabase.from('staff').select('*').order('store_id').order('sort_order'),
       supabase.from('stores').select('*').order('id'),
+      // PIN の有無と時給。ハッシュは返らない
+      supabase.rpc('get_staff_private'),
     ]);
     setRows(s || []);
     setStores(st || []);
+    const map: Record<number, StaffPrivate> = {};
+    for (const p of ((pv || []) as StaffPrivate[])) map[p.staff_id] = p;
+    setPrivateMap(map);
     setLoading(false);
   };
 
@@ -90,6 +96,8 @@ export function StaffMaster() {
             <th className="p-2.5 text-left">所属店舗</th>
             <th className="p-2.5 text-left">区分</th>
             <th className="p-2.5 text-center">並び順</th>
+            <th className="p-2.5 text-center w-28">時給</th>
+            <th className="p-2.5 text-center w-40">打刻PIN</th>
             <th className="p-2.5 text-center w-32">freee従業員ID</th>
             <th className="p-2.5 text-center">状態</th>
             <th className="p-2.5 text-center w-40">操作</th>
@@ -109,6 +117,12 @@ export function StaffMaster() {
                 </span>
               </td>
               <td className="p-2.5 text-center font-mono">{r.sort_order}</td>
+              <td className="p-2 text-center">
+                <WageInput staffId={r.id} value={privateMap[r.id]?.hourly_wage ?? null} onSaved={load} />
+              </td>
+              <td className="p-2 text-center">
+                <PinCell staffId={r.id} name={r.name} info={privateMap[r.id]} onSaved={load} />
+              </td>
               <td className="p-2 text-center">
                 <FreeeIdInput row={r} onSaved={load} />
               </td>
@@ -224,5 +238,137 @@ function FreeeIdInput({ row, onSaved }: { row: Staff; onSaved: () => void }) {
       placeholder="未設定"
       className="w-24 p-1 border-1.5 border-ink bg-paper text-xs font-mono text-center"
     />
+  );
+}
+
+// 時給。フォーカスが外れた時に保存する
+function WageInput({
+  staffId,
+  value,
+  onSaved,
+}: {
+  staffId: number;
+  value: number | null;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(value === null ? '' : String(value));
+
+  useEffect(() => {
+    setText(value === null ? '' : String(value));
+  }, [staffId, value]);
+
+  const save = async () => {
+    const trimmed = text.trim();
+    const next = trimmed === '' ? null : Number(trimmed);
+    if (next === (value ?? null)) return;
+
+    const { error } = await supabase.rpc('set_staff_wage', {
+      p_staff_id: staffId,
+      p_hourly_wage: next,
+    });
+    if (error) {
+      alert(`時給を保存できませんでした: ${error.message}`);
+      return;
+    }
+    onSaved();
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <input
+        type="text"
+        inputMode="numeric"
+        value={text}
+        onChange={(e) => setText(e.target.value.replace(/[^\d]/g, ''))}
+        onBlur={save}
+        placeholder="未設定"
+        className="w-20 p-1 border-1.5 border-ink bg-paper text-xs font-mono text-right"
+      />
+      <span className="text-[10px] text-muted">円</span>
+    </div>
+  );
+}
+
+// 打刻PIN。ハッシュは取得できないので、発行・再発行・解除だけを行う
+function PinCell({
+  staffId,
+  name,
+  info,
+  onSaved,
+}: {
+  staffId: number;
+  name: string;
+  info: StaffPrivate | undefined;
+  onSaved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const hasPin = info?.has_pin ?? false;
+
+  const savePin = async (pin: string | null) => {
+    setBusy(true);
+    const { error } = await supabase.rpc('set_staff_pin', {
+      p_staff_id: staffId,
+      p_pin: pin,
+    });
+    setBusy(false);
+    if (error) {
+      alert(`PINを設定できませんでした: ${error.message}`);
+      return;
+    }
+    onSaved();
+  };
+
+  const issue = async () => {
+    const input = prompt(
+      `${name} さんの打刻PINを設定します。\n4〜6桁の数字を入力してください。`,
+      ''
+    );
+    if (input === null) return;
+    const pin = input.trim();
+    if (!/^\d{4,6}$/.test(pin)) {
+      alert('PINは4〜6桁の数字で入力してください');
+      return;
+    }
+    await savePin(pin);
+    alert(`${name} さんのPINを設定しました。\n本人に「${pin}」を伝えてください。`);
+  };
+
+  const clear = async () => {
+    if (!confirm(`${name} さんのPINを解除します。\n解除すると打刻できなくなります。よろしいですか?`)) {
+      return;
+    }
+    await savePin(null);
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1.5">
+      <span
+        className={`inline-block px-2 py-0.5 text-[10px] font-bold border-1.5 border-ink ${
+          info?.locked
+            ? 'bg-accent text-paper'
+            : hasPin
+            ? 'bg-accent2 text-paper'
+            : 'bg-stone-300'
+        }`}
+      >
+        {info?.locked ? 'ロック中' : hasPin ? '設定済' : '未設定'}
+      </span>
+      <button
+        onClick={issue}
+        disabled={busy}
+        className="text-[10px] px-2 py-1 border-1.5 border-ink font-bold"
+      >
+        {hasPin ? '再発行' : '発行'}
+      </button>
+      {hasPin && (
+        <button
+          onClick={clear}
+          disabled={busy}
+          className="text-[10px] px-2 py-1 border-1.5 border-accent text-accent font-bold"
+        >
+          解除
+        </button>
+      )}
+    </div>
   );
 }
