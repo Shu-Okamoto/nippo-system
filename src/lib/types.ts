@@ -114,6 +114,8 @@ export type ClockBoard = {
   store_name: string;
   today: string;
   server_time: string;
+  // 全体設定。false なら PIN 入力なしで打刻できる
+  require_pin: boolean;
   members: ClockMember[];
 };
 

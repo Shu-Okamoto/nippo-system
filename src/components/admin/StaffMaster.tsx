@@ -88,6 +88,8 @@ export function StaffMaster() {
 
   return (
     <div>
+      <PunchPinSetting />
+
       <table className="w-full border-2 border-ink bg-paper text-sm">
         <thead className="bg-ink text-paper">
           <tr>
@@ -369,6 +371,69 @@ function PinCell({
           解除
         </button>
       )}
+    </div>
+  );
+}
+
+// 打刻時にPINを求めるかどうかの全体設定(全員一律)
+function PunchPinSetting() {
+  const [requirePin, setRequirePin] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const { data } = await supabase.rpc('get_app_settings');
+    setRequirePin((data as any)?.require_punch_pin ?? true);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const toggle = async (next: boolean) => {
+    const msg = next
+      ? '打刻時にPIN入力を求めます。\nPIN未設定のメンバーは打刻できなくなります。よろしいですか?'
+      : '打刻時のPIN入力を不要にします。\n名前を選ぶだけで誰でも打刻できる状態になります。よろしいですか?';
+    if (!confirm(msg)) return;
+
+    setBusy(true);
+    const { error } = await supabase.rpc('set_require_punch_pin', { p_require: next });
+    setBusy(false);
+    if (error) {
+      alert(`設定を変更できませんでした: ${error.message}`);
+      return;
+    }
+    setRequirePin(next);
+  };
+
+  if (requirePin === null) return null;
+
+  return (
+    <div className="mb-4 p-4 border-2 border-ink bg-paper2 flex flex-wrap items-center gap-4">
+      <div className="flex-1 min-w-[260px]">
+        <b className="font-mincho block mb-1">打刻時のPIN入力</b>
+        <p className="text-xs text-muted leading-relaxed">
+          {requirePin
+            ? '打刻画面で名前を選んだあと、本人のPIN入力が必要です。'
+            : '名前を選ぶだけで打刻できます。PINの設定内容は保持されるので、いつでも「必要」に戻せます。'}
+        </p>
+      </div>
+      <div className="flex border-2 border-ink">
+        {[
+          { v: true, label: '必要' },
+          { v: false, label: '不要' },
+        ].map((o) => (
+          <button
+            key={String(o.v)}
+            onClick={() => requirePin !== o.v && toggle(o.v)}
+            disabled={busy}
+            className={`px-5 py-2.5 font-mincho font-bold text-sm border-r-2 border-ink last:border-r-0 ${
+              requirePin === o.v ? 'bg-ink text-paper' : 'bg-paper'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
