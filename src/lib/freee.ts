@@ -222,6 +222,12 @@ export async function postTimeClock(
 ): Promise<unknown> {
   // ゼロ埋めを落とさないよう数値化せずそのまま渡す
   const path = encodeURIComponent(employeeId.trim());
+  const payload = {
+    company_id: Number(process.env.FREEE_COMPANY_ID),
+    type,
+    base_date: baseDate,
+    datetime,
+  };
   const res = await fetch(`${API_BASE}/hr/api/v1/employees/${path}/time_clocks`, {
     method: 'POST',
     headers: {
@@ -229,24 +235,53 @@ export async function postTimeClock(
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({
-      company_id: Number(process.env.FREEE_COMPANY_ID),
-      type,
-      base_date: baseDate,
-      datetime,
-    }),
+    body: JSON.stringify(payload),
   });
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // freee の 400 は文言が汎用的で原因が分からないため、送信内容と
+    // 生レスポンスを両方残す。ここをケチると切り分けができない
     const detail =
       json?.errors?.[0]?.messages?.[0] ||
       json?.message ||
       json?.error_description ||
-      JSON.stringify(json).slice(0, 300);
-    throw new Error(`freee 打刻登録に失敗しました (${res.status}): ${detail}`);
+      '';
+    throw new Error(
+      `freee 打刻登録に失敗しました (${res.status})${detail ? `: ${detail}` : ''}\n` +
+        `送信先: /hr/api/v1/employees/${path}/time_clocks\n` +
+        `送信内容: ${JSON.stringify(payload)}\n` +
+        `freee応答: ${JSON.stringify(json).slice(0, 600)}`
+    );
   }
   return json;
+}
+
+/**
+ * その従業員が今どの打刻を打てるかを freee に問い合わせる。
+ * 従業員ID・事業所ID・スコープがまとめて検証できるので切り分けに使う。
+ */
+export async function getAvailableTypes(
+  accessToken: string,
+  employeeId: string,
+  date: string
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const path = encodeURIComponent(employeeId.trim());
+  const params = new URLSearchParams({
+    company_id: String(process.env.FREEE_COMPANY_ID),
+    date,
+  });
+  const res = await fetch(
+    `${API_BASE}/hr/api/v1/employees/${path}/time_clocks/available_types?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
 }
 
 /** UTCのISO文字列を freee が要求する JST の "YYYY-MM-DD HH:MM:SS" に変換する */
