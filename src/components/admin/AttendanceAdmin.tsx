@@ -129,6 +129,8 @@ export function AttendanceAdmin() {
     { id: number; name: string; num: string | null }[] | null
   >(null);
   const [empLoading, setEmpLoading] = useState(false);
+  const [diag, setDiag] = useState<string | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
 
   const slug = stores.find((s) => s.id === storeId)?.slug ?? null;
 
@@ -360,6 +362,27 @@ export function AttendanceAdmin() {
       alert(`従業員一覧を取得できませんでした: ${err.message}`);
     }
     setEmpLoading(false);
+  };
+
+  const runDiag = async () => {
+    setDiagLoading(true);
+    setDiag(null);
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      setDiagLoading(false);
+      setDiag('ログインし直してください');
+      return;
+    }
+    try {
+      const res = await fetch('/api/freee/diag', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDiag(JSON.stringify(await res.json(), null, 2));
+    } catch (err: any) {
+      setDiag(`エラー: ${err.message}`);
+    }
+    setDiagLoading(false);
   };
 
   const runSync = async () => {
@@ -683,7 +706,12 @@ export function AttendanceAdmin() {
                     )}
                   </td>
                   <td className="p-2.5 text-xs">
-                    <span
+                    <button
+                      onClick={() =>
+                        r.freee_error
+                          ? alert(`${r.staff_name ?? r.staff_id} さんの打刻\n\n${r.freee_error}`)
+                          : undefined
+                      }
                       className={`inline-block px-2 py-0.5 font-bold border-1.5 border-ink ${
                         r.freee_status === 'sent'
                           ? 'bg-accent2 text-paper'
@@ -694,7 +722,7 @@ export function AttendanceAdmin() {
                       title={r.freee_error || ''}
                     >
                       {FREEE_LABEL[r.freee_status] ?? r.freee_status}
-                    </span>
+                    </button>
                   </td>
                   <td className="p-2.5 text-center whitespace-nowrap">
                     {r.is_voided ? (
@@ -831,7 +859,19 @@ export function AttendanceAdmin() {
               >
                 {empLoading ? '取得中…' : 'freee の従業員IDを確認'}
               </button>
+              <button
+                onClick={runDiag}
+                disabled={diagLoading}
+                className="px-4 py-2 border-2 border-ink font-mincho font-bold text-sm"
+              >
+                {diagLoading ? '診断中…' : '接続を診断'}
+              </button>
             </div>
+            {diag && (
+              <pre className="mt-3 text-[11px] whitespace-pre-wrap font-mono bg-paper border-2 border-ink p-2 max-h-80 overflow-auto">
+                {diag}
+              </pre>
+            )}
             {employees && (
               <div className="mt-3 border-2 border-ink bg-paper">
                 <div className="px-3 py-2 bg-ink text-paper font-mincho font-bold text-xs">
