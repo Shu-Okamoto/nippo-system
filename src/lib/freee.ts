@@ -22,6 +22,8 @@ const REFRESH_MARGIN_SEC = 300;
 
 export type FreeeClockType = 'clock_in' | 'break_begin' | 'break_end' | 'clock_out';
 
+export const AUTHORIZE_URL = 'https://accounts.secure.freee.co.jp/public_api/authorize';
+
 export function isFreeeConfigured(): boolean {
   return Boolean(
     process.env.FREEE_CLIENT_ID &&
@@ -30,6 +32,89 @@ export function isFreeeConfigured(): boolean {
       process.env.SUPABASE_SERVICE_ROLE_KEY &&
       process.env.NEXT_PUBLIC_SUPABASE_URL
   );
+}
+
+/** freee アプリに登録したコールバックURL。未設定ならリクエストのオリジンから組み立てる */
+export function redirectUri(origin: string): string {
+  return process.env.FREEE_REDIRECT_URI || `${origin}/api/freee/callback`;
+}
+
+/**
+ * 認可コードをアクセストークン/リフレッシュトークンに交換して保存する。
+ * OAuth の初回接続でのみ使う。
+ */
+export async function exchangeCode(
+  sb: SupabaseClient<any, any, any, any, any>,
+  code: string,
+  redirect: string
+): Promise<void> {
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: process.env.FREEE_CLIENT_ID!,
+    client_secret: process.env.FREEE_CLIENT_SECRET!,
+    code,
+    redirect_uri: redirect,
+  });
+
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      `freee との接続に失敗しました (${res.status}): ${
+        json.error_description || json.error || 'unknown'
+      }`
+    );
+  }
+
+  const expiresAt = new Date(Date.now() + (json.expires_in ?? 21600) * 1000).toISOString();
+  const { error } = await sb.from('freee_tokens').upsert({
+    id: 1,
+    access_token: json.access_token,
+    refresh_token: json.refresh_token,
+    expires_at: expiresAt,
+  });
+  if (error) {
+    throw new Error(`freee トークンの保存に失敗しました: ${error.message}`);
+  }
+}
+
+/** 接続済みか(トークンが保存されているか)を返す */
+export async function isConnected(
+  sb: SupabaseClient<any, any, any, any, any>
+): Promise<boolean> {
+  const { data } = await sb.from('freee_tokens').select('id').eq('id', 1).maybeSingle();
+  return Boolean(data);
+}
+
+/** freee人事労務の従業員一覧。従業員IDをスタッフマスタに転記するために使う */
+export async function listEmployees(accessToken: string): Promise<unknown> {
+  const now = new Date();
+  const params = new URLSearchParams({
+    year: String(now.getFullYear()),
+    month: String(now.getMonth() + 1),
+    limit: '100',
+  });
+  const res = await fetch(
+    `${API_BASE}/hr/api/v1/companies/${process.env.FREEE_COMPANY_ID}/employees?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail =
+      json?.errors?.[0]?.messages?.[0] || json?.message || JSON.stringify(json).slice(0, 300);
+    throw new Error(`従業員一覧を取得できませんでした (${res.status}): ${detail}`);
+  }
+  return json;
 }
 
 export function serviceClient(): SupabaseClient<any, any, any, any, any> {

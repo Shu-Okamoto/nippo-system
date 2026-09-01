@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getAccessToken,
+  isConnected,
   isFreeeConfigured,
   postTimeClock,
   serviceClient,
@@ -53,15 +54,17 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = serviceClient();
-  const [{ count: pending }, { count: errored }] = await Promise.all([
+  const [{ count: pending }, { count: errored }, connected] = await Promise.all([
     sb.from('time_clock_events').select('id', { count: 'exact', head: true })
       .eq('freee_status', 'pending').eq('is_voided', false),
     sb.from('time_clock_events').select('id', { count: 'exact', head: true })
       .eq('freee_status', 'error'),
+    isConnected(sb),
   ]);
 
   return NextResponse.json({
     configured: true,
+    connected,
     pending: pending ?? 0,
     errored: errored ?? 0,
   });
