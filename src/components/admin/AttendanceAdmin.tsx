@@ -125,7 +125,9 @@ export function AttendanceAdmin() {
   const [sync, setSync] = useState<SyncInfo | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
-  const [employees, setEmployees] = useState<{ id: number; name: string }[] | null>(null);
+  const [employees, setEmployees] = useState<
+    { id: number; name: string; num: string | null }[] | null
+  >(null);
   const [empLoading, setEmpLoading] = useState(false);
 
   const slug = stores.find((s) => s.id === storeId)?.slug ?? null;
@@ -833,16 +835,28 @@ export function AttendanceAdmin() {
             {employees && (
               <div className="mt-3 border-2 border-ink bg-paper">
                 <div className="px-3 py-2 bg-ink text-paper font-mincho font-bold text-xs">
-                  freee人事労務の従業員(この ID をスタッフマスタに入力)
+                  freee人事労務の従業員
+                  <span className="block font-normal opacity-70 mt-0.5">
+                    スタッフマスタには「API ID」を入力してください。
+                    従業員番号(000015 のようなゼロ埋め)ではありません
+                  </span>
                 </div>
                 {employees.length === 0 ? (
                   <p className="p-3 text-xs text-muted">従業員が取得できませんでした</p>
                 ) : (
                   <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] text-muted font-mincho font-bold border-b border-ink">
+                        <th className="text-left p-2 w-24">API ID</th>
+                        <th className="text-left p-2 w-28">従業員番号</th>
+                        <th className="text-left p-2">氏名</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {employees.map((e) => (
                         <tr key={e.id} className="border-b border-dotted border-stone-300">
-                          <td className="p-2 font-mono w-24">{e.id}</td>
+                          <td className="p-2 font-mono font-bold">{e.id}</td>
+                          <td className="p-2 font-mono text-muted">{e.num ?? '—'}</td>
                           <td className="p-2 font-bold">{e.name}</td>
                         </tr>
                       ))}

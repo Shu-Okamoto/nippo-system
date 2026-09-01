@@ -198,29 +198,18 @@ export function StaffMaster() {
   );
 }
 
-// freee人事労務の従業員ID。フォーカスが外れた時に保存する
+// freee人事労務の従業員ID。フォーカスが外れた時に保存する。
+// "000015" のようなゼロ埋めがあるため文字列のまま扱う
 function FreeeIdInput({ row, onSaved }: { row: Staff; onSaved: () => void }) {
-  const [value, setValue] = useState(
-    row.freee_employee_id === null || row.freee_employee_id === undefined
-      ? ''
-      : String(row.freee_employee_id)
-  );
+  const [value, setValue] = useState(row.freee_employee_id ?? '');
 
   useEffect(() => {
-    setValue(
-      row.freee_employee_id === null || row.freee_employee_id === undefined
-        ? ''
-        : String(row.freee_employee_id)
-    );
+    setValue(row.freee_employee_id ?? '');
   }, [row.id, row.freee_employee_id]);
 
   const save = async () => {
     const trimmed = value.trim();
-    const next = trimmed === '' ? null : Number(trimmed);
-    if (next !== null && !Number.isInteger(next)) {
-      alert('freee従業員IDは整数で入力してください');
-      return;
-    }
+    const next = trimmed === '' ? null : trimmed;
     if (next === (row.freee_employee_id ?? null)) return;
 
     const { error } = await supabase

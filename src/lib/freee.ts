@@ -215,12 +215,14 @@ export async function getAccessToken(
  */
 export async function postTimeClock(
   accessToken: string,
-  employeeId: number,
+  employeeId: string,
   type: FreeeClockType,
   baseDate: string,
   datetime: string
 ): Promise<unknown> {
-  const res = await fetch(`${API_BASE}/hr/api/v1/employees/${employeeId}/time_clocks`, {
+  // ゼロ埋めを落とさないよう数値化せずそのまま渡す
+  const path = encodeURIComponent(employeeId.trim());
+  const res = await fetch(`${API_BASE}/hr/api/v1/employees/${path}/time_clocks`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,

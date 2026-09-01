@@ -19,8 +19,9 @@ export type Staff = {
   role: StaffRole;
   sort_order: number;
   is_active: boolean;
-  // freee人事労務の従業員ID。未設定なら打刻は freee に送られない
-  freee_employee_id: number | null;
+  // freee人事労務の従業員ID。"000015" のようなゼロ埋めがあるため文字列。
+  // 未設定なら打刻は freee に送られない
+  freee_employee_id: string | null;
 };
 
 export type Product = {
