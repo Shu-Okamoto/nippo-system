@@ -100,6 +100,7 @@ export function StaffMaster() {
             <th className="p-2.5 text-center">並び順</th>
             <th className="p-2.5 text-center w-28">時給</th>
             <th className="p-2.5 text-center w-40">打刻PIN</th>
+            <th className="p-2.5 text-center w-44">個人打刻URL</th>
             <th className="p-2.5 text-center w-32">freee従業員ID</th>
             <th className="p-2.5 text-center">状態</th>
             <th className="p-2.5 text-center w-40">操作</th>
@@ -124,6 +125,9 @@ export function StaffMaster() {
               </td>
               <td className="p-2 text-center">
                 <PinCell staffId={r.id} name={r.name} info={privateMap[r.id]} onSaved={load} />
+              </td>
+              <td className="p-2 text-center">
+                <ClockLinkCell staffId={r.id} name={r.name} info={privateMap[r.id]} onSaved={load} />
               </td>
               <td className="p-2 text-center">
                 <FreeeIdInput row={r} onSaved={load} />
@@ -434,6 +438,105 @@ function PunchPinSetting() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// 個人専用の打刻URL。DX 側の LINE 配信に渡す想定
+function ClockLinkCell({
+  staffId,
+  name,
+  info,
+  onSaved,
+}: {
+  staffId: number;
+  name: string;
+  info: StaffPrivate | undefined;
+  onSaved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const token = info?.clock_token ?? null;
+
+  // SSR 時は window が無いので、実際に押された時に組み立てる
+  const urlOf = (t: string) => `${window.location.origin}/clock/${t}`;
+
+  const issue = async (force: boolean) => {
+    if (force && !confirm(`${name} さんの打刻URLを再発行します。\n今までのURLは使えなくなります。よろしいですか?`)) {
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await supabase.rpc('issue_clock_token', {
+      p_staff_id: staffId,
+      p_force: force,
+    });
+    setBusy(false);
+    if (error) {
+      alert(`URLを発行できませんでした: ${error.message}`);
+      return;
+    }
+    onSaved();
+    await copy(urlOf(data as string));
+  };
+
+  const copy = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      alert(`打刻URLをコピーしました。\n\n${url}`);
+    } catch {
+      // クリップボードが使えない環境では手でコピーしてもらう
+      prompt('打刻URL(コピーしてください)', url);
+    }
+  };
+
+  const revoke = async () => {
+    if (!confirm(`${name} さんの打刻URLを失効させます。\nLINEで配ったURLは使えなくなります。よろしいですか?`)) {
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase.rpc('revoke_clock_token', { p_staff_id: staffId });
+    setBusy(false);
+    if (error) {
+      alert(`失効できませんでした: ${error.message}`);
+      return;
+    }
+    onSaved();
+  };
+
+  if (!token) {
+    return (
+      <button
+        onClick={() => issue(false)}
+        disabled={busy}
+        className="text-[10px] px-2 py-1 border-1.5 border-ink font-bold"
+      >
+        URL発行
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5 flex-wrap">
+      <button
+        onClick={() => copy(urlOf(token))}
+        disabled={busy}
+        className="text-[10px] px-2 py-1 border-1.5 border-ink font-bold bg-ink text-paper"
+      >
+        コピー
+      </button>
+      <button
+        onClick={() => issue(true)}
+        disabled={busy}
+        className="text-[10px] px-2 py-1 border-1.5 border-ink font-bold"
+      >
+        再発行
+      </button>
+      <button
+        onClick={revoke}
+        disabled={busy}
+        className="text-[10px] px-2 py-1 border-1.5 border-accent text-accent font-bold"
+      >
+        失効
+      </button>
     </div>
   );
 }

@@ -108,6 +108,23 @@ export type StaffPrivate = {
   pin_set_at: string | null;
   locked: boolean;
   hourly_wage: number | null;
+  // 個人専用打刻URL のトークン。未発行なら null
+  clock_token: string | null;
+};
+
+// 個人専用打刻URL(/clock/[token])で開く1人分の状態
+export type PersonalClockBoard = {
+  staff_id: number;
+  name: string;
+  store_name: string;
+  today: string;
+  server_time: string;
+  require_pin: boolean;
+  has_pin: boolean;
+  last_event: ClockState;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  break_minutes: number | null;
 };
 
 export type ClockBoard = {
