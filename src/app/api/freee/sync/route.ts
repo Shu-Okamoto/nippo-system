@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
   const errors: string[] = [];
 
   for (const ev of events as any[]) {
-    const employeeId = ev.staff?.freee_employee_id;
+    const employeeId: string | null = ev.staff?.freee_employee_id ?? null;
 
     // freee 従業員IDが未設定のスタッフは送りようがないので skipped にする。
     // (スタッフマスタで ID を設定したら、その後の打刻から送られる)
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
     try {
       await postTimeClock(
         accessToken,
-        Number(employeeId),
+        String(employeeId),
         ev.event_type as FreeeClockType,
         baseDate,
         datetime
