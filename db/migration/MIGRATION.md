@@ -448,3 +448,72 @@ PIN 設定が「不要」のときは URL を知っていれば打刻できる�
 
 トークンは再発行するまで変わらないので、DX 側は一度保存すればよい。
 URL が漏れた場合は **再発行** で古い URL が即座に無効になる。
+
+---
+
+## Step 8 補足 — freee との接続手順(OAuth を画面から実行)
+
+`/api/freee/auth` を用意したので、リフレッシュトークンを手作業で
+取得する必要はなくなった。
+
+### 1. freee アプリを作成
+
+freee アプリストアの開発者ページでアプリを作成する。
+
+- **コールバックURL** に次を登録する
+  ```
+  https://<本番ホスト>/api/freee/callback
+  ```
+- 権限(スコープ)は **人事労務 の打刻登録・従業員参照** を有効にする
+- Client ID / Client Secret を控える
+
+### 2. Vercel に環境変数を設定
+
+```
+SUPABASE_SERVICE_ROLE_KEY=<Supabase の service_role キー>
+FREEE_CLIENT_ID=<Client ID>
+FREEE_CLIENT_SECRET=<Client Secret>
+FREEE_COMPANY_ID=<事業所ID>
+CRON_SECRET=<長いランダム文字列>
+FREEE_REDIRECT_URI=https://<本番ホスト>/api/freee/callback
+```
+
+いずれも `NEXT_PUBLIC_` を付けないこと。設定後に再デプロイする。
+
+### 3. freee と接続する
+
+ブラウザで次を開く。
+
+```
+https://<本番ホスト>/api/freee/auth?secret=<CRON_SECRET>
+```
+
+freee の認可画面が出るので許可すると、トークンが `nippo.freee_tokens`
+に保存されて「接続しました」と表示される。
+
+以降トークンは自動で更新される(freee はリフレッシュトークンを毎回
+ローテーションするため、更新後の値を都度保存している)。
+
+### 4. 従業員IDを紐付ける
+
+1. 管理画面 → 勤怠管理 → **freee の従業員IDを確認** を押す
+2. 表示された ID を、スタッフマスタの「freee従業員ID」列に入力
+
+**未設定のメンバーの打刻は送信されず `対象外` になる。**
+
+### 5. 送信する
+
+管理画面 → 勤怠管理 → **freee に送信**。
+
+定期実行したい場合は `vercel.json` に Cron を追加し、
+`POST /api/freee/sync` をヘッダ `x-cron-secret: <CRON_SECRET>` で叩く。
+
+### つまずいたら
+
+- **接続に失敗しました(セッションが確認できませんでした)**
+  → `/api/freee/auth` から始めていない。必ず auth から開く
+- **redirect_uri のエラー**
+  → freee アプリに登録したコールバックURLと `FREEE_REDIRECT_URI` が
+    完全一致していない(末尾スラッシュ・http/https も含めて)
+- **従業員一覧が空**
+  → スコープ不足か事業所IDの誤り。`FREEE_COMPANY_ID` を確認する

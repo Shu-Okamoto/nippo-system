@@ -65,6 +65,7 @@ type MonthData = {
 
 type SyncInfo = {
   configured: boolean;
+  connected?: boolean;
   pending?: number;
   errored?: number;
   message?: string;
@@ -124,6 +125,8 @@ export function AttendanceAdmin() {
   const [sync, setSync] = useState<SyncInfo | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<{ id: number; name: string }[] | null>(null);
+  const [empLoading, setEmpLoading] = useState(false);
 
   const slug = stores.find((s) => s.id === storeId)?.slug ?? null;
 
@@ -333,6 +336,28 @@ export function AttendanceAdmin() {
         }),
       '追加できませんでした'
     );
+  };
+
+  const loadEmployees = async () => {
+    setEmpLoading(true);
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      setEmpLoading(false);
+      alert('ログインし直してください');
+      return;
+    }
+    try {
+      const res = await fetch('/api/freee/employees', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await res.json();
+      if (j.error) alert(`従業員一覧を取得できませんでした: ${j.error}`);
+      else setEmployees(j.employees ?? []);
+    } catch (err: any) {
+      alert(`従業員一覧を取得できませんでした: ${err.message}`);
+    }
+    setEmpLoading(false);
   };
 
   const runSync = async () => {
@@ -757,9 +782,31 @@ export function AttendanceAdmin() {
             FREEE_COMPANY_ID / FREEE_INITIAL_REFRESH_TOKEN / SUPABASE_SERVICE_ROLE_KEY
             を設定すると有効になります。
           </p>
+        ) : sync?.connected === false ? (
+          <>
+            <p className="text-sm mb-3">
+              環境変数は設定済みですが、まだ freee と接続していません。
+              <span className="block text-xs text-muted mt-1">
+                下のURLをブラウザで開くと freee の認可画面に進みます。
+                {'<CRON_SECRET>'} は Vercel に設定した値に置き換えてください。
+              </span>
+            </p>
+            <code className="block text-xs font-mono bg-paper border-2 border-ink p-2 break-all">
+              /api/freee/auth?secret=&lt;CRON_SECRET&gt;
+            </code>
+            <button
+              onClick={loadSyncInfo}
+              className="mt-3 px-4 py-2 border-2 border-ink font-mincho font-bold text-sm"
+            >
+              ↻ 接続状況を確認
+            </button>
+          </>
         ) : (
           <>
             <p className="text-sm mb-3">
+              <span className="inline-block px-2 py-0.5 text-xs font-bold border-1.5 border-ink bg-accent2 text-paper mr-2">
+                接続済
+              </span>
               未送信 <b className="font-mono">{sync?.pending ?? '—'}</b> 件 / エラー{' '}
               <b className="font-mono">{sync?.errored ?? '—'}</b> 件
               <span className="block text-xs text-muted mt-1">
@@ -767,13 +814,43 @@ export function AttendanceAdmin() {
                 「要手動修正」は freee 送信後に直した打刻です。freee 側は手で直してください。
               </span>
             </p>
-            <button
-              onClick={runSync}
-              disabled={syncing}
-              className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
-            >
-              {syncing ? '送信中…' : 'freee に送信'}
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={runSync}
+                disabled={syncing}
+                className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+              >
+                {syncing ? '送信中…' : 'freee に送信'}
+              </button>
+              <button
+                onClick={loadEmployees}
+                disabled={empLoading}
+                className="px-4 py-2 border-2 border-ink font-mincho font-bold text-sm"
+              >
+                {empLoading ? '取得中…' : 'freee の従業員IDを確認'}
+              </button>
+            </div>
+            {employees && (
+              <div className="mt-3 border-2 border-ink bg-paper">
+                <div className="px-3 py-2 bg-ink text-paper font-mincho font-bold text-xs">
+                  freee人事労務の従業員(この ID をスタッフマスタに入力)
+                </div>
+                {employees.length === 0 ? (
+                  <p className="p-3 text-xs text-muted">従業員が取得できませんでした</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {employees.map((e) => (
+                        <tr key={e.id} className="border-b border-dotted border-stone-300">
+                          <td className="p-2 font-mono w-24">{e.id}</td>
+                          <td className="p-2 font-bold">{e.name}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
           </>
         )}
         {syncResult && (
