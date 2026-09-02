@@ -544,3 +544,65 @@ freee人事労務には似た値が2つある。**打刻APIが使うのは API I
 
 従業員番号を入れると打刻送信時に 404 系のエラーになる。その場合は
 勤怠管理の打刻一覧で `エラー` バッジにカーソルを合わせると原因が出る。
+
+---
+
+## Step 16 — RLS を有効化する
+
+`20_enable_rls.sql` を移行先 SQL Editor で1回実行する。
+
+Supabase の警告 `Table nippo.stores is public, but RLS has not been enabled.`
+への対応。
+
+### なぜ今やるか
+
+Phase 1 は「未認証アクセス前提」で RLS を切っていた。その後、
+勤怠打刻(労務記録)・売上・時給・PIN を持つようになり、
+**anon キー(ブラウザに配られる公開値)で何でも読み書きできる状態**は
+放置できなくなった。
+
+### 2段階に分ける
+
+一律に閉じると店舗画面(未認証)が動かなくなるため、実際のアクセス
+経路を調べて分けている。
+
+| Tier | テーブル | anon | authenticated |
+|---|---|---|---|
+| **1 完全遮断** | `time_clock_events` `staff_private` `freee_tokens` `app_settings` | × | × |
+| **2 読み取りのみ** | `stores` `staff` `products` `report_questions` `daily_reports` `shift_entries` `order_lines` `report_answers` | SELECT のみ | 全操作 |
+
+**Tier 1 はポリシーを1つも作らない。** クライアントはこれらを直接
+触っておらず、すべて `SECURITY DEFINER` の RPC 経由なので閉じても
+壊れない(直接読んでいるのはサーバ側 API ルートの service role のみ)。
+
+**Tier 2 は SELECT だけ anon に許可する。** 店舗の日報画面・打刻画面・
+公開ダッシュボードが未認証でこれらを読むため。書き込みは
+`save_daily_report_full` 等の RPC 経由なので、テーブルへの直接書き込みは
+閉じてよい。これで「anon キーを持っていれば全データを消せる」状態が
+無くなる。
+
+`SECURITY DEFINER` の関数は所有者権限で動くため RLS を迂回する。
+既存の RPC はすべてそのまま動作する。
+
+### 実行後の確認
+
+ファイル末尾の確認クエリで、各テーブルの RLS 有効状態とポリシー数を
+一覧できる。期待値もコメントに書いてある。
+
+動作確認は次の順で:
+
+1. `/store/<slug>/today` … 日報の表示・保存
+2. `/store/<slug>/clock` … 打刻
+3. `/dashboard` `/monthly` `/attendance` … 管理画面(ログイン済み)
+4. `/public-dashboard` … 未認証で表示できるか
+
+### 残る論点: 公開ダッシュボード
+
+`/public-dashboard` は認証不要で売上を表示する。この URL を知っていれば
+誰でも売上を見られるため、Tier 2 で `daily_reports` の anon SELECT を
+許可せざるを得ない。
+
+売上を非公開にしたい場合は `/public-dashboard` を廃止し、
+`daily_reports` `shift_entries` `order_lines` `report_answers` の
+SELECT を authenticated のみに絞るとよい(店舗画面はこれらを
+`get_today_full` 経由で読んでいるので影響しない)。
