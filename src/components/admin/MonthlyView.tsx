@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Store, Staff, ShiftEntry, EntryType } from '@/lib/types';
-import { shiftMinutes, formatJpy } from '@/lib/calc';
+import { shiftMinutes, formatJpy, formatHours } from '@/lib/calc';
 
 type SalesRow = {
   date: string;
@@ -397,7 +397,7 @@ export function MonthlyView() {
 
           <div className="mb-8 grid grid-cols-2 md:grid-cols-4 border-2 border-ink">
             <SummaryCell label="月間合計売上" value={formatJpy(grandSales)} hero />
-            <SummaryCell label="月間総労働時間" value={`${grandHours.toFixed(1)} h`} />
+            <SummaryCell label="月間総労働時間" value={`${formatHours(grandHours)} h`} />
             <SummaryCell
               label="平均人時売"
               value={grandNinjibai !== null ? formatJpy(grandNinjibai) + ' /h' : '—'}
@@ -487,11 +487,11 @@ export function MonthlyView() {
                             salesRows[i]?.isWeekend ? 'bg-paper2' : ''
                           } ${h > 0 ? '' : 'text-stone-300'}`}
                         >
-                          {h > 0 ? h.toFixed(1) : '·'}
+                          {h > 0 ? formatHours(h) : '·'}
                         </td>
                       ))}
                       <td className="p-2 font-mono text-right font-extrabold border-l border-ink">
-                        {m.total.toFixed(1)}
+                        {formatHours(m.total)}
                       </td>
                       <td className="p-2 font-mono text-right font-bold text-accent border-l border-ink">
                         {m.avgNinjibai !== null ? m.avgNinjibai.toLocaleString('ja-JP') : '—'}
@@ -506,11 +506,11 @@ export function MonthlyView() {
                     <td className="p-2 border-r border-ink sticky left-0 bg-gold z-10">日計</td>
                     {shiftDayTotals.map((t, i) => (
                       <td key={i} className="p-1 font-mono text-center">
-                        {t > 0 ? t.toFixed(1) : '·'}
+                        {t > 0 ? formatHours(t) : '·'}
                       </td>
                     ))}
                     <td className="p-2 font-mono text-right text-sm border-l border-ink">
-                      {shiftGrandTotal.toFixed(1)}
+                      {formatHours(shiftGrandTotal)}
                     </td>
                     <td className="p-2 font-mono text-right text-sm text-accent border-l border-ink">
                       {shiftStoreId !== null &&

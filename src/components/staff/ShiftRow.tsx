@@ -1,6 +1,6 @@
 'use client';
 import type { ShiftEntry } from '@/lib/types';
-import { shiftMinutes, formatTimeRange, getPatternTimes } from '@/lib/calc';
+import { shiftMinutes, formatTimeRange, getPatternTimes, formatMinutesAsHours } from '@/lib/calc';
 
 // 9:00を0%, 17:00を100%とする(8時間スパン)
 const SPAN_START = 9 * 60;
@@ -38,7 +38,7 @@ export function ShiftRow({
   const left = timeToPct(start);
   const width = Math.max(0, timeToPct(end) - left);
   const minutes = shiftMinutes(entry);
-  const hours = (minutes / 60).toFixed(1);
+  const hours = formatMinutesAsHours(minutes);
   const isPlan = entry.entry_type === 'plan';
 
   return (

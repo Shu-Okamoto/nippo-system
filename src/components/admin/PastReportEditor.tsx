@@ -7,7 +7,7 @@ import type {
   Store, Staff, Product, ShiftEntry, EntryType, ShiftPattern,
   ReportQuestion,
 } from '@/lib/types';
-import { totalHours, ninjibai, kyakuTanka, formatJpy, shiftMinutes } from '@/lib/calc';
+import { totalHours, ninjibai, kyakuTanka, formatJpy, shiftMinutes, formatHours, formatMinutesAsHours } from '@/lib/calc';
 import { OrderRow } from '@/components/staff/OrderRow';
 import { ShiftRow } from '@/components/staff/ShiftRow';
 import { ShiftEditor } from '@/components/staff/ShiftEditor';
@@ -476,7 +476,7 @@ export function PastReportEditor({ slug, date }: { slug: string; date: string })
             <div className="p-2.5 px-3 text-xs border-r border-ink">総時間数</div>
             <div className="border-r border-ink"></div>
             <div className="p-2.5 px-1 font-mono text-base text-center">
-              {(visibleShifts.reduce((sum, s) => sum + shiftMinutes(s), 0) / 60).toFixed(1)}
+              {formatMinutesAsHours(visibleShifts.reduce((sum, s) => sum + shiftMinutes(s), 0))}
             </div>
           </div>
 
@@ -500,7 +500,7 @@ export function PastReportEditor({ slug, date }: { slug: string; date: string })
           <div className="font-mincho text-xs font-bold text-muted tracking-wider">
             人時売
             <small className="block font-mono text-[10px] opacity-80 mt-0.5">
-              = {formatJpy(report.sales_actual)} ÷ {totalH.toFixed(1)}h
+              = {formatJpy(report.sales_actual)} ÷ {formatHours(totalH)}h
             </small>
           </div>
           <div className="text-right">
