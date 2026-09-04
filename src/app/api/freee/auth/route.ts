@@ -20,8 +20,28 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-  if (req.nextUrl.searchParams.get('secret') !== secret) {
-    return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+  // どこで弾かれたか分かるようメッセージを分ける
+  const given = req.nextUrl.searchParams.get('secret');
+  if (!given) {
+    return NextResponse.json(
+      {
+        error: 'secret パラメータがありません',
+        hint: 'URL の末尾に ?secret=<CRON_SECRETの値> を付けて開いてください',
+      },
+      { status: 401 }
+    );
+  }
+  if (given !== secret) {
+    return NextResponse.json(
+      {
+        error: 'secret が一致しません',
+        hint:
+          'Vercel の CRON_SECRET と同じ値か確認してください。' +
+          '設定後に再デプロイしていない場合は反映されていません。' +
+          '値に + や / などが含まれる場合は URL エンコードが必要です',
+      },
+      { status: 401 }
+    );
   }
   if (!isFreeeConfigured()) {
     return NextResponse.json(
