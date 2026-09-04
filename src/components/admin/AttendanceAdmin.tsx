@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { formatMinutesAsHours } from '@/lib/calc';
 import type { ClockEventType, Staff, Store } from '@/lib/types';
 
 const EVENT_LABEL: Record<ClockEventType, string> = {
@@ -599,7 +600,7 @@ export function AttendanceAdmin() {
                     {s.break_minutes ? `${s.break_minutes}分` : '—'}
                   </td>
                   <td className="p-2 text-right font-mono font-bold">
-                    {s.work_minutes !== null ? `${(s.work_minutes / 60).toFixed(1)}h` : '—'}
+                    {s.work_minutes !== null ? `${formatMinutesAsHours(s.work_minutes)}h` : '—'}
                   </td>
                 </tr>
               ))}
@@ -954,7 +955,7 @@ function MonthView({
         <SummaryCell label="出勤日数" value={`${data.work_days} 日`} />
         <SummaryCell
           label="合計実働"
-          value={`${(data.total_work_minutes / 60).toFixed(1)} h`}
+          value={`${formatMinutesAsHours(data.total_work_minutes)} h`}
         />
       </div>
 
@@ -996,7 +997,7 @@ function MonthView({
                     {d.break_minutes ? `${d.break_minutes}分` : '·'}
                   </td>
                   <td className="p-2 text-right font-mono font-bold">
-                    {d.work_minutes !== null ? `${(d.work_minutes / 60).toFixed(1)}h` : '·'}
+                    {d.work_minutes !== null ? `${formatMinutesAsHours(d.work_minutes)}h` : '·'}
                   </td>
                   <td className="p-2 text-center">
                     {incomplete && (

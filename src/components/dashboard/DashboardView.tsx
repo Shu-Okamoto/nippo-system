@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { formatJpy, shiftMinutes, formatTimeRange } from '@/lib/calc';
+import { formatJpy, shiftMinutes, formatTimeRange, formatHours } from '@/lib/calc';
 import type { ShiftEntry } from '@/lib/types';
 
 type OrderItem = {
@@ -213,7 +213,7 @@ export function DashboardView() {
           <div className="grid grid-cols-2 md:grid-cols-4 border-2 border-ink mb-6">
             <KpiCell label="全社 人時売" value={overallNinjibai !== null ? formatJpy(overallNinjibai) + ' /h' : '—'} hero />
             <KpiCell label="合計売上" value={formatJpy(totalSales)} />
-            <KpiCell label="総労働時間" value={`${totalHrs.toFixed(1)} h`} />
+            <KpiCell label="総労働時間" value={`${formatHours(totalHrs)} h`} />
             <KpiCell label="日報提出" value={`${rows.length} / 2`} />
           </div>
 
@@ -245,7 +245,7 @@ export function DashboardView() {
                   <Field label="売上実績" value={formatJpy(r.sales_actual)} />
                   <Field label="客単価" value={r.kyaku_tanka !== null ? formatJpy(r.kyaku_tanka) : '—'} />
                   <Field label="客数" value={r.customer_count !== null ? `${r.customer_count}人` : '—'} />
-                  <Field label="総時間" value={r.total_hours !== null ? `${Number(r.total_hours).toFixed(1)}h` : '—'} />
+                  <Field label="総時間" value={r.total_hours !== null ? `${formatHours(Number(r.total_hours))}h` : '—'} />
                 </div>
                 {(r.report_text || r.kizuki || r.sozai_zan || r.mochi_zan || (r.qas && r.qas.length > 0)) && (
                   <div className="border-t border-dashed border-ink p-4 bg-paper2 text-sm leading-relaxed">
@@ -298,7 +298,7 @@ export function DashboardView() {
                           <tr key={i} className="border-b border-dotted border-stone-300">
                             <td className="py-1 font-bold">{sh.name}</td>
                             <td className="py-1 font-mono text-xs">{sh.range}</td>
-                            <td className="py-1 font-mono text-right">{sh.hours.toFixed(1)}h</td>
+                            <td className="py-1 font-mono text-right">{formatHours(sh.hours)}h</td>
                           </tr>
                         ))}
                       </tbody>

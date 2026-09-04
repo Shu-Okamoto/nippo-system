@@ -26,6 +26,30 @@ function parseHM(t: string | null | undefined): number | null {
   return h * 60 + min;
 }
 
+// 勤務時間の丸め単位(分)。15分単位で運用している
+export const ROUND_UNIT_MIN = 15;
+
+/** 15分単位に切り上げる(出勤時刻・休憩時間に使う) */
+export function ceilToUnit(min: number, unit = ROUND_UNIT_MIN): number {
+  return Math.ceil(min / unit) * unit;
+}
+
+/** 15分単位に切り捨てる(退勤時刻に使う) */
+export function floorToUnit(min: number, unit = ROUND_UNIT_MIN): number {
+  return Math.floor(min / unit) * unit;
+}
+
+/**
+ * 実働分数を返す。
+ *
+ * 15分丸めのルール:
+ *   出勤時刻 … 切り上げ(09:01 → 09:15)
+ *   退勤時刻 … 切り捨て(17:14 → 17:00)
+ *   休憩時間 … 切り上げ(47分 → 60分)
+ *
+ * 出退勤とも15分境界に丸めるので、その差は必ず15の倍数になる。
+ * 休憩も15の倍数なので、実働は常に0.25時間刻みになる。
+ */
 export function shiftMinutes(s: ShiftEntry): number {
   let startMin: number | null = null;
   let endMin: number | null = null;
@@ -48,7 +72,14 @@ export function shiftMinutes(s: ShiftEntry): number {
     }
   }
 
-  if (startMin === null || endMin === null || endMin <= startMin) return 0;
+  if (startMin === null || endMin === null) return 0;
+
+  startMin = ceilToUnit(startMin);
+  endMin = floorToUnit(endMin);
+  // 休憩0分はそのまま。切り上げで15分にしてしまわないようにする
+  breakMin = breakMin > 0 ? ceilToUnit(breakMin) : 0;
+
+  if (endMin <= startMin) return 0;
   return Math.max(0, endMin - startMin - breakMin);
 }
 
@@ -74,8 +105,18 @@ export function formatJpy(n: number | null | undefined): string {
   return '¥' + n.toLocaleString('ja-JP');
 }
 
+/**
+ * 時間数の表示。15分丸めなので 0.25 刻みになる。
+ * 末尾の 0 は落とすので 7.25 / 7.5 / 7.75 / 8 のように出る。
+ * (7.3 のような 0.1 刻みの表示にはしない)
+ */
 export function formatHours(h: number): string {
-  return h.toFixed(1);
+  return String(Math.round(h * 100) / 100);
+}
+
+/** 分数を時間表示にする。集計側が分で持っている箇所用 */
+export function formatMinutesAsHours(min: number): string {
+  return formatHours(min / 60);
 }
 
 export function formatTimeRange(s: ShiftEntry): string {

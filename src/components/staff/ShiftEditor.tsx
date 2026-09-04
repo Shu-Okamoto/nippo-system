@@ -1,7 +1,7 @@
 'use client';
 import type { ShiftEntry, ShiftPattern } from '@/lib/types';
 import { TimeInput } from './TimeInput';
-import { PATTERN_LABEL, getPatternTimes, shiftMinutes } from '@/lib/calc';
+import { PATTERN_LABEL, getPatternTimes, shiftMinutes, formatMinutesAsHours } from '@/lib/calc';
 
 export function ShiftEditor({
   entry,
@@ -15,7 +15,7 @@ export function ShiftEditor({
   const isPlan = entry.entry_type === 'plan';
   const isThrough = isPlan && entry.pattern === 'through';
   const showBreak = !isPlan;
-  const hours = (shiftMinutes(entry) / 60).toFixed(1);
+  const hours = formatMinutesAsHours(shiftMinutes(entry));
 
   return (
     <div className="mt-3 p-3 bg-paper2 border-2 border-ink">
