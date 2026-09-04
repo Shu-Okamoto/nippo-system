@@ -38,6 +38,8 @@ type EventRow = {
   freee_error: string | null;
 };
 
+type BreakSpan = { begin: string; end: string | null };
+
 type SummaryRow = {
   staff_id: number;
   name: string;
@@ -45,6 +47,7 @@ type SummaryRow = {
   end_time: string | null;
   break_minutes: number;
   work_minutes: number | null;
+  breaks: BreakSpan[];
 };
 
 type MonthDay = {
@@ -53,6 +56,7 @@ type MonthDay = {
   end_time: string | null;
   break_minutes: number;
   work_minutes: number | null;
+  breaks: BreakSpan[];
   event_count: number;
 };
 
@@ -583,8 +587,9 @@ export function AttendanceAdmin() {
               <tr className="text-[11px] text-muted font-mincho font-bold border-b border-ink">
                 <th className="text-left p-2">メンバー</th>
                 <th className="text-center p-2 w-20">出勤</th>
+                <th className="text-center p-2 w-32">休憩入〜戻</th>
                 <th className="text-center p-2 w-20">退勤</th>
-                <th className="text-center p-2 w-20">休憩</th>
+                <th className="text-center p-2 w-20">休憩計</th>
                 <th className="text-right p-2 w-24">実働</th>
               </tr>
             </thead>
@@ -593,6 +598,9 @@ export function AttendanceAdmin() {
                 <tr key={s.staff_id} className="border-b border-dotted border-stone-300">
                   <td className="p-2 font-bold">{s.name}</td>
                   <td className="p-2 text-center font-mono">{s.start_time ?? '—'}</td>
+                  <td className="p-2 text-center font-mono text-xs">
+                    <BreakSpans breaks={s.breaks} />
+                  </td>
                   <td className="p-2 text-center font-mono">
                     {s.end_time ?? <span className="text-accent font-bold">未</span>}
                   </td>
@@ -965,8 +973,9 @@ function MonthView({
             <tr>
               <th className="p-2.5 text-left w-28">日付</th>
               <th className="p-2.5 text-center w-20">出勤</th>
+              <th className="p-2.5 text-center w-32">休憩入〜戻</th>
               <th className="p-2.5 text-center w-20">退勤</th>
-              <th className="p-2.5 text-center w-20">休憩</th>
+              <th className="p-2.5 text-center w-20">休憩計</th>
               <th className="p-2.5 text-right w-24">実働</th>
               <th className="p-2.5 text-center w-24">状態</th>
             </tr>
@@ -992,6 +1001,9 @@ function MonthView({
                     <span className="text-[10px] text-muted ml-1">({DAY_NAMES[wd]})</span>
                   </td>
                   <td className="p-2 text-center font-mono">{d.start_time ?? '·'}</td>
+                  <td className="p-2 text-center font-mono text-xs">
+                    <BreakSpans breaks={d.breaks} />
+                  </td>
                   <td className="p-2 text-center font-mono">{d.end_time ?? '·'}</td>
                   <td className="p-2 text-center font-mono">
                     {d.break_minutes ? `${d.break_minutes}分` : '·'}
@@ -1037,5 +1049,21 @@ function SummaryCell({ label, value, hero }: { label: string; value: string; her
         {value}
       </div>
     </div>
+  );
+}
+
+// 休憩の入り〜戻り。1日に複数回あり得るので全て並べる。
+// 戻り打刻が無い場合は「休憩中」と出す
+function BreakSpans({ breaks }: { breaks: BreakSpan[] | null | undefined }) {
+  if (!breaks || breaks.length === 0) return <span className="text-stone-400">·</span>;
+  return (
+    <>
+      {breaks.map((b, i) => (
+        <div key={i} className="whitespace-nowrap">
+          {b.begin}〜
+          {b.end ?? <span className="text-accent font-bold">休憩中</span>}
+        </div>
+      ))}
+    </>
   );
 }
