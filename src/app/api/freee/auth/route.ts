@@ -39,6 +39,13 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('state', state);
 
+  // 人事労務APIを使うにはスコープの明示が必要な場合がある。
+  // freee アプリの設定画面に表示されているスコープを
+  // FREEE_SCOPE にスペース区切りで入れると、ここで要求する
+  if (process.env.FREEE_SCOPE) {
+    url.searchParams.set('scope', process.env.FREEE_SCOPE);
+  }
+
   const res = NextResponse.redirect(url.toString());
   // 認可から戻ってきた時に state を突き合わせる。第三者が自分の freee
   // アカウントで勝手に接続を上書きするのを防ぐ
