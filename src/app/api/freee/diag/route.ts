@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getAccessToken,
   getAvailableTypes,
+  getHrMe,
   isConnected,
   isFreeeConfigured,
   serviceClient,
@@ -44,6 +45,25 @@ export async function GET(req: NextRequest) {
     accessToken = await getAccessToken(sb);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 502 });
+  }
+
+  // 最初に人事労務APIそのものに到達できるかを見る。
+  // ここが 403 ならアプリに人事労務の権限が付いていない
+  const hrMe = await getHrMe(accessToken);
+  if (!hrMe.ok) {
+    return NextResponse.json({
+      hr_access: {
+        ok: false,
+        status: hrMe.status,
+        response: hrMe.body,
+        hint:
+          '人事労務APIに到達できていません。freee アプリの設定で人事労務の' +
+          '権限が有効か、事業所で人事労務が使える状態かを確認してください。' +
+          'スコープの指定が必要な場合は FREEE_SCOPE を設定して接続し直します。',
+      },
+      scope_sent: process.env.FREEE_SCOPE ?? '(未設定)',
+      company_id: process.env.FREEE_COMPANY_ID,
+    });
   }
 
   // freee従業員IDが設定されているスタッフを対象にする
@@ -102,6 +122,8 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
+    hr_access: { ok: true, response: hrMe.body },
+    scope_sent: process.env.FREEE_SCOPE ?? '(未設定)',
     company_id: process.env.FREEE_COMPANY_ID,
     date: today,
     available_types: checks,

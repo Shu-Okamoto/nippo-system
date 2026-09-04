@@ -91,6 +91,24 @@ export async function isConnected(
   return Boolean(data);
 }
 
+/**
+ * 人事労務APIに到達できるかを確認する。
+ * ここが通らなければ、従業員一覧も打刻も通らない。
+ * アプリに人事労務の権限が付いていない場合はここで 403 になる。
+ */
+export async function getHrMe(
+  accessToken: string
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const res = await fetch(`${API_BASE}/hr/api/v1/users/me`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
+}
+
 /** freee人事労務の従業員一覧。従業員IDをスタッフマスタに転記するために使う */
 export async function listEmployees(accessToken: string): Promise<unknown> {
   const now = new Date();
