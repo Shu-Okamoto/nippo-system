@@ -42,7 +42,7 @@ async function authorize(req: NextRequest): Promise<string | null> {
       // 下の 401 に落とす
     }
   }
-  return '認証が必要です';
+  return 'この URL はブラウザで直接開けません。管理画面(勤怠管理)から実行するか、定期実行の場合は x-cron-secret ヘッダを付けてください';
 }
 
 export async function GET(req: NextRequest) {
