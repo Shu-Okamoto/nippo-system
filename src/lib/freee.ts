@@ -81,10 +81,20 @@ export async function exchangeCode(
     access_token: json.access_token,
     refresh_token: json.refresh_token,
     expires_at: expiresAt,
+    // 実際に許可されたスコープ。403 の切り分けに使う
+    scope: json.scope ?? null,
   });
   if (error) {
     throw new Error(`freee トークンの保存に失敗しました: ${error.message}`);
   }
+}
+
+/** 実際に許可されているスコープ。未保存なら null */
+export async function grantedScope(
+  sb: SupabaseClient<any, any, any, any, any>
+): Promise<string | null> {
+  const { data } = await sb.from('freee_tokens').select('scope').eq('id', 1).maybeSingle();
+  return (data as any)?.scope ?? null;
 }
 
 /** 接続済みか(トークンが保存されているか)を返す */
@@ -224,6 +234,7 @@ async function refreshToken(sb: SupabaseClient<any, any, any, any, any>, refresh
     access_token: json.access_token,
     refresh_token: json.refresh_token,
     expires_at: expiresAt,
+    scope: json.scope ?? null,
   });
   if (error) {
     throw new Error(`freee トークンの保存に失敗しました: ${error.message}`);
