@@ -113,6 +113,41 @@ export async function getHrMe(
   return { ok: res.ok, status: res.status, body };
 }
 
+/**
+ * 指定した事業所にこのトークンでアクセスできるかを確かめる。
+ *
+ * freee のアクセストークンは認可時に選んだ事業所に紐づく。
+ * users/me に出てくる事業所でも、認可した事業所でなければ
+ * invalid_authorization_company_id で弾かれる。
+ * 全事業所を試すことで、実際に有効な事業所を特定できる。
+ */
+export async function probeCompany(
+  accessToken: string,
+  companyId: number
+): Promise<{ ok: boolean; status: number; message?: string }> {
+  const now = new Date();
+  const params = new URLSearchParams({
+    year: String(now.getFullYear()),
+    month: String(now.getMonth() + 1),
+    limit: '1',
+  });
+  const res = await fetch(
+    `${API_BASE}/hr/api/v1/companies/${companyId}/employees?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  const body: any = await res.json().catch(() => ({}));
+  return {
+    ok: res.ok,
+    status: res.status,
+    message: res.ok ? undefined : body?.message || body?.code,
+  };
+}
+
 /** freee人事労務の従業員一覧。従業員IDをスタッフマスタに転記するために使う */
 export async function listEmployees(accessToken: string): Promise<unknown> {
   const now = new Date();

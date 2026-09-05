@@ -812,3 +812,47 @@ https://<本番ホスト>/api/freee/callback
 
 に変更し、`FREEE_REDIRECT_URI` にも同じ値を設定しておくとよい。
 以降は `/api/freee/auth?secret=<CRON_SECRET>` を開くだけで接続が完了する。
+
+---
+
+## freee 連携 — invalid_authorization_company_id が出る場合
+
+診断で `hr_access.ok: true` なのに、各スタッフが 401 で
+
+```json
+{ "message": "この事業所にアクセスする権限がありません",
+  "code": "invalid_authorization_company_id" }
+```
+
+となる場合。
+
+### 原因
+
+**freee のアクセストークンは、認可時に選んだ事業所に紐づく。**
+
+`/hr/api/v1/users/me` はそのユーザーがアクセスできる事業所を**すべて**
+返すが、トークンが有効なのはそのうち**認可した1つだけ**。
+`FREEE_COMPANY_ID` がそれと違うと、この 401 になる。
+
+### 特定のしかた
+
+診断は users/me に出た事業所を1つずつ試し、`companies` に結果を返す。
+
+```json
+"companies": [
+  { "id": 12431094, "name": "有限会社みかわ", "accessible": true,  "is_configured": false },
+  { "id": 12812948, "name": "開発用テスト事業所", "accessible": false, "is_configured": true }
+]
+```
+
+`accessible: true` の事業所がトークンの認可先。
+
+### 直しかた
+
+**使いたい事業所の ID を `FREEE_COMPANY_ID` に設定**し、再デプロイする。
+その事業所が `accessible: false` なら、認可をやり直して
+**同意画面でその事業所を選択**する。
+
+事業所を変えたら、スタッフマスタの freee従業員ID も
+その事業所のものに揃っているか確認すること。
+事業所が違えば従業員IDも別物になる。
