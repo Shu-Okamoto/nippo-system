@@ -81,10 +81,20 @@ export async function exchangeCode(
     access_token: json.access_token,
     refresh_token: json.refresh_token,
     expires_at: expiresAt,
+    // 実際に許可されたスコープ。403 の切り分けに使う
+    scope: json.scope ?? null,
   });
   if (error) {
     throw new Error(`freee トークンの保存に失敗しました: ${error.message}`);
   }
+}
+
+/** 実際に許可されているスコープ。未保存なら null */
+export async function grantedScope(
+  sb: SupabaseClient<any, any, any, any, any>
+): Promise<string | null> {
+  const { data } = await sb.from('freee_tokens').select('scope').eq('id', 1).maybeSingle();
+  return (data as any)?.scope ?? null;
 }
 
 /** 接続済みか(トークンが保存されているか)を返す */
@@ -111,6 +121,41 @@ export async function getHrMe(
   });
   const body = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, body };
+}
+
+/**
+ * 指定した事業所にこのトークンでアクセスできるかを確かめる。
+ *
+ * freee のアクセストークンは認可時に選んだ事業所に紐づく。
+ * users/me に出てくる事業所でも、認可した事業所でなければ
+ * invalid_authorization_company_id で弾かれる。
+ * 全事業所を試すことで、実際に有効な事業所を特定できる。
+ */
+export async function probeCompany(
+  accessToken: string,
+  companyId: number
+): Promise<{ ok: boolean; status: number; message?: string }> {
+  const now = new Date();
+  const params = new URLSearchParams({
+    year: String(now.getFullYear()),
+    month: String(now.getMonth() + 1),
+    limit: '1',
+  });
+  const res = await fetch(
+    `${API_BASE}/hr/api/v1/companies/${companyId}/employees?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  const body: any = await res.json().catch(() => ({}));
+  return {
+    ok: res.ok,
+    status: res.status,
+    message: res.ok ? undefined : body?.message || body?.code,
+  };
 }
 
 /** freee人事労務の従業員一覧。従業員IDをスタッフマスタに転記するために使う */
@@ -189,6 +234,7 @@ async function refreshToken(sb: SupabaseClient<any, any, any, any, any>, refresh
     access_token: json.access_token,
     refresh_token: json.refresh_token,
     expires_at: expiresAt,
+    scope: json.scope ?? null,
   });
   if (error) {
     throw new Error(`freee トークンの保存に失敗しました: ${error.message}`);

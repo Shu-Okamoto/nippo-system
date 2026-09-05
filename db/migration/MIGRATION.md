@@ -812,3 +812,101 @@ https://<本番ホスト>/api/freee/callback
 
 に変更し、`FREEE_REDIRECT_URI` にも同じ値を設定しておくとよい。
 以降は `/api/freee/auth?secret=<CRON_SECRET>` を開くだけで接続が完了する。
+
+---
+
+## freee 連携 — invalid_authorization_company_id が出る場合
+
+診断で `hr_access.ok: true` なのに、各スタッフが 401 で
+
+```json
+{ "message": "この事業所にアクセスする権限がありません",
+  "code": "invalid_authorization_company_id" }
+```
+
+となる場合。
+
+### 原因
+
+**freee のアクセストークンは、認可時に選んだ事業所に紐づく。**
+
+`/hr/api/v1/users/me` はそのユーザーがアクセスできる事業所を**すべて**
+返すが、トークンが有効なのはそのうち**認可した1つだけ**。
+`FREEE_COMPANY_ID` がそれと違うと、この 401 になる。
+
+### 特定のしかた
+
+診断は users/me に出た事業所を1つずつ試し、`companies` に結果を返す。
+
+```json
+"companies": [
+  { "id": 12431094, "name": "有限会社みかわ", "accessible": true,  "is_configured": false },
+  { "id": 12812948, "name": "開発用テスト事業所", "accessible": false, "is_configured": true }
+]
+```
+
+`accessible: true` の事業所がトークンの認可先。
+
+### 直しかた
+
+**使いたい事業所の ID を `FREEE_COMPANY_ID` に設定**し、再デプロイする。
+その事業所が `accessible: false` なら、認可をやり直して
+**同意画面でその事業所を選択**する。
+
+事業所を変えたら、スタッフマスタの freee従業員ID も
+その事業所のものに揃っているか確認すること。
+事業所が違えば従業員IDも別物になる。
+
+---
+
+## Step 20 — freee トークンの付与スコープを保存する
+
+`24_freee_token_scope.sql` を移行先 SQL Editor で1回実行する。
+
+`nippo.freee_tokens` に `scope` 列を追加する。freee はトークン発行時の
+レスポンスに実際に許可されたスコープを返すので、それを保存しておくと
+診断画面で「要求したスコープ」と「実際に許可されたスコープ」を
+突き合わせられる。
+
+**列を足しただけでは記録されない。** 接続し直した時点で保存される。
+
+---
+
+## freee 連携 — 打刻APIが 403 になる場合
+
+事業所へのアクセス(`companies` の `accessible: true`)は通っているのに、
+`available_types` が全員 403 `アクセス権限がありません` になる場合。
+
+```json
+{ "status_code": 403,
+  "errors": [{ "type": "forbidden", "messages": ["アクセス権限がありません。"] }] }
+```
+
+### 401 との違い
+
+| エラー | 意味 |
+|---|---|
+| 401 `invalid_authorization_company_id` | 事業所の指定が認可先と違う |
+| **403 `forbidden`** | **事業所は合っているが、その操作の権限がない** |
+
+401 から 403 に変わったら、事業所の問題は解決している。
+
+### 原因
+
+打刻(勤怠)を扱う権限がアプリに認可されていない。
+`scope_requested` が `(未設定)` の場合、freee の既定スコープで
+接続しており、打刻が含まれていない可能性が高い。
+
+### 直しかた
+
+1. freee 開発者ページ → アプリ → 権限設定で、**打刻(勤怠)**関連の
+   権限が有効か確認する。無効なら有効にする
+2. その画面に表示されているスコープを `FREEE_SCOPE` に
+   スペース区切りで設定する
+3. **再デプロイ**する
+4. **認可をやり直す**(既存トークンは古いスコープのままなので、
+   取り直さないと反映されない)
+5. 診断の `scope_granted` に打刻関連のスコープが入ったか確認する
+
+`scope_requested` と `scope_granted` が食い違う場合、要求したスコープが
+アプリに許可されていない。freee 側の権限設定を先に直す必要がある。

@@ -12,8 +12,10 @@ import {
   getAccessToken,
   getAvailableTypes,
   getHrMe,
+  grantedScope,
   isConnected,
   isFreeeConfigured,
+  probeCompany,
   serviceClient,
   toJstDateTime,
 } from '@/lib/freee';
@@ -82,6 +84,42 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // トークンがどの事業所で有効かを特定する。
+  // freee のトークンは認可時に選んだ事業所に紐づくため、users/me に
+  // 出ていても認可先でなければ invalid_authorization_company_id になる
+  const listed: any[] = (hrMe.body as any)?.companies ?? [];
+  const companyChecks = [];
+  for (const c of listed) {
+    const r = await probeCompany(accessToken, c.id);
+    companyChecks.push({
+      id: c.id,
+      name: c.name,
+      accessible: r.ok,
+      status: r.status,
+      message: r.message,
+      is_configured: String(c.id) === String(process.env.FREEE_COMPANY_ID),
+    });
+  }
+  const usable = companyChecks.filter((c) => c.accessible);
+  const configuredOk = companyChecks.find((c) => c.is_configured)?.accessible ?? false;
+
+  if (!configuredOk) {
+    return NextResponse.json({
+      hr_access: { ok: true },
+      company_id: process.env.FREEE_COMPANY_ID,
+      companies: companyChecks,
+      problem:
+        usable.length > 0
+          ? `FREEE_COMPANY_ID (${process.env.FREEE_COMPANY_ID}) にこのトークンでアクセスできません。` +
+            `このトークンで使える事業所は ${usable
+              .map((c) => `${c.name}(${c.id})`)
+              .join(' / ')} です。` +
+            'FREEE_COMPANY_ID をその ID に変えるか、使いたい事業所を選んで認可し直してください。'
+          : 'このトークンではどの事業所にもアクセスできません。' +
+            '認可し直す際に、使いたい事業所を選択してください。',
+    });
+  }
+
   // freee従業員IDが設定されているスタッフを対象にする
   const { data: staff } = await sb
     .from('staff')
@@ -137,12 +175,29 @@ export async function GET(req: NextRequest) {
     };
   }
 
+  // 全員 403 なら個々の従業員IDの問題ではなく、打刻APIを使う権限
+  // (スコープ)が認可されていない可能性が高い
+  const allForbidden =
+    checks.length > 0 && checks.every((c) => c.status === 403);
+
   return NextResponse.json({
-    hr_access: { ok: true, response: hrMe.body },
-    scope_sent: process.env.FREEE_SCOPE ?? '(未設定)',
+    hr_access: { ok: true },
+    scope_requested: process.env.FREEE_SCOPE ?? '(未設定)',
+    scope_granted: (await grantedScope(sb)) ?? '(不明。接続し直すと記録されます)',
     company_id: process.env.FREEE_COMPANY_ID,
+    companies: companyChecks,
     date: today,
     available_types: checks,
     next_punch: samplePayload,
+    ...(allForbidden
+      ? {
+          problem:
+            '事業所へのアクセスは通っていますが、打刻APIが全員 403 です。' +
+            '個々の従業員IDの問題ではなく、打刻を扱う権限が認可されて' +
+            'いない可能性が高いです。freee 開発者ページでアプリの権限に' +
+            '打刻(勤怠)が含まれているか確認し、必要なスコープを' +
+            'FREEE_SCOPE に設定して再デプロイのうえ、認可し直してください。',
+        }
+      : {}),
   });
 }
