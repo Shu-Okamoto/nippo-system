@@ -136,6 +136,10 @@ export function AttendanceAdmin() {
   const [empLoading, setEmpLoading] = useState(false);
   const [diag, setDiag] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+  const [exchangeRedirect, setExchangeRedirect] = useState('');
+  const [exchanging, setExchanging] = useState(false);
+  const [exchangeResult, setExchangeResult] = useState<string | null>(null);
 
   const slug = stores.find((s) => s.id === storeId)?.slug ?? null;
 
@@ -367,6 +371,42 @@ export function AttendanceAdmin() {
       alert(`従業員一覧を取得できませんでした: ${err.message}`);
     }
     setEmpLoading(false);
+  };
+
+  const exchangeAuthCode = async () => {
+    setExchanging(true);
+    setExchangeResult(null);
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      setExchanging(false);
+      setExchangeResult('ログインし直してください');
+      return;
+    }
+    try {
+      const res = await fetch('/api/freee/exchange', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code: authCode.trim(),
+          redirect_uri: exchangeRedirect.trim() || undefined,
+        }),
+      });
+      const j = await res.json();
+      if (j.ok) {
+        setExchangeResult('freee と接続しました');
+        setAuthCode('');
+        await loadSyncInfo();
+      } else {
+        setExchangeResult(`${j.error}${j.hint ? `\n\n${j.hint}` : ''}`);
+      }
+    } catch (err: any) {
+      setExchangeResult(`エラー: ${err.message}`);
+    }
+    setExchanging(false);
   };
 
   const runDiag = async () => {
@@ -839,6 +879,52 @@ export function AttendanceAdmin() {
             >
               ↻ 接続状況を確認
             </button>
+
+            {/* コールバックが oob の場合は認可コードが画面に出るので手で貼る */}
+            <div className="mt-4 pt-4 border-t-2 border-dashed border-ink">
+              <b className="font-mincho block mb-1.5 text-sm">認可コードを貼り付けて接続</b>
+              <p className="text-xs text-muted mb-2 leading-relaxed">
+                freee アプリのコールバックURLが
+                <code className="font-mono mx-1">urn:ietf:wg:oauth:2.0:oob</code>
+                の場合、認可後にリダイレクトされず画面にコードが表示されます。
+                そのコードをここに貼ってください。
+                <b className="text-accent">コードは数分で失効し、一度しか使えません。</b>
+              </p>
+              <div className="flex gap-2 flex-wrap items-center">
+                <input
+                  value={authCode}
+                  onChange={(e) => setAuthCode(e.target.value)}
+                  placeholder="認可コード"
+                  className="p-2 border-2 border-ink bg-paper text-sm font-mono min-w-[260px]"
+                />
+                <button
+                  onClick={exchangeAuthCode}
+                  disabled={exchanging || !authCode.trim()}
+                  className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+                >
+                  {exchanging ? '接続中…' : '接続する'}
+                </button>
+              </div>
+              <details className="mt-2">
+                <summary className="text-xs text-muted cursor-pointer">
+                  コールバックURLが oob 以外の場合
+                </summary>
+                <input
+                  value={exchangeRedirect}
+                  onChange={(e) => setExchangeRedirect(e.target.value)}
+                  placeholder="認可時に使ったコールバックURL"
+                  className="mt-2 w-full p-2 border-2 border-ink bg-paper text-xs font-mono"
+                />
+                <p className="mt-1 text-[11px] text-muted">
+                  認可時に使った値と完全に一致している必要があります。空欄なら oob として扱います。
+                </p>
+              </details>
+              {exchangeResult && (
+                <pre className="mt-2 text-xs whitespace-pre-wrap font-mono bg-paper border-2 border-ink p-2">
+                  {exchangeResult}
+                </pre>
+              )}
+            </div>
           </>
         ) : (
           <>

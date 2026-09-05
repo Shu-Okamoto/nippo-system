@@ -24,6 +24,10 @@ export type FreeeClockType = 'clock_in' | 'break_begin' | 'break_end' | 'clock_o
 
 export const AUTHORIZE_URL = 'https://accounts.secure.freee.co.jp/public_api/authorize';
 
+// freee アプリのコールバックURLがこの値だと、認可後にリダイレクトせず
+// 画面に認可コードが表示される(手動で貼り付ける運用)
+export const OOB_REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
+
 export function isFreeeConfigured(): boolean {
   return Boolean(
     process.env.FREEE_CLIENT_ID &&
