@@ -100,6 +100,14 @@ export async function GET(req: NextRequest) {
       is_configured: String(c.id) === String(process.env.FREEE_COMPANY_ID),
     });
   }
+  // 認可したユーザー自身が、その事業所で従業員として登録されているか。
+  // /hr/api/v1/employees/{id}/... 系は従業員単位のAPIなので、
+  // ここが null だと本人以外どころか誰の打刻も扱えない可能性がある
+  const configured = listed.find(
+    (c) => String(c.id) === String(process.env.FREEE_COMPANY_ID)
+  );
+  const selfEmployeeId = configured?.employee_id ?? null;
+
   const usable = companyChecks.filter((c) => c.accessible);
   const configuredOk = companyChecks.find((c) => c.is_configured)?.accessible ?? false;
 
@@ -175,10 +183,19 @@ export async function GET(req: NextRequest) {
     };
   }
 
-  // 全員 403 なら個々の従業員IDの問題ではなく、打刻APIを使う権限
-  // (スコープ)が認可されていない可能性が高い
+  // 認可したユーザー本人の従業員IDでも試す。
+  // 本人だけ通るなら「他人の打刻は扱えない」、本人も通らないなら
+  // 「従業員単位APIにそもそも到達できていない」と切り分けられる
+  let selfCheck: unknown = null;
+  if (selfEmployeeId) {
+    const r = await getAvailableTypes(accessToken, String(selfEmployeeId), today);
+    selfCheck = { freee_employee_id: selfEmployeeId, ok: r.ok, status: r.status, response: r.body };
+  }
+
   const allForbidden =
     checks.length > 0 && checks.every((c) => c.status === 403);
+  const allUnauthorized =
+    checks.length > 0 && checks.every((c) => c.status === 401);
 
   return NextResponse.json({
     hr_access: { ok: true },
@@ -187,8 +204,25 @@ export async function GET(req: NextRequest) {
     company_id: process.env.FREEE_COMPANY_ID,
     companies: companyChecks,
     date: today,
+    self_employee_id: selfEmployeeId,
+    self_check: selfCheck,
     available_types: checks,
     next_punch: samplePayload,
+    ...(allUnauthorized
+      ? {
+          problem:
+            '事業所単位のAPI(従業員一覧)は 200 で通るのに、従業員単位の' +
+            'API(打刻)だけ 401 invalid_access_token になっています。' +
+            (selfEmployeeId === null
+              ? '認可した freee アカウントが、この事業所の従業員として' +
+                '登録されていません(users/me の employee_id が null)。' +
+                '従業員単位のAPIは呼び出し元を従業員として解決するため、' +
+                'ここが未登録だと誰の打刻も扱えません。' +
+                'その事業所の従業員に紐づくアカウントで認可し直してください。'
+              : 'self_check の結果を確認してください。本人だけ通る場合、' +
+                'このAPIでは他人の打刻を代理登録できない可能性があります。'),
+        }
+      : {}),
     ...(allForbidden
       ? {
           problem:
