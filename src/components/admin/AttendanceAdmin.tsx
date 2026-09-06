@@ -137,6 +137,8 @@ export function AttendanceAdmin() {
   const [diag, setDiag] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // エラー全文の表示用。alert だと本文をコピーできず、原因の共有ができない
+  const [detail, setDetail] = useState<string | null>(null);
   const [authCode, setAuthCode] = useState('');
   const [exchangeRedirect, setExchangeRedirect] = useState('');
   const [exchanging, setExchanging] = useState(false);
@@ -238,7 +240,7 @@ export function AttendanceAdmin() {
     const { error: e } = await fn();
     setBusy(false);
     if (e) {
-      alert(`${failMsg}: ${e.message}`);
+      setDetail(`${failMsg}\n\n${e.message}`);
       return false;
     }
     await load();
@@ -366,10 +368,10 @@ export function AttendanceAdmin() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const j = await res.json();
-      if (j.error) alert(`従業員一覧を取得できませんでした: ${j.error}`);
+      if (j.error) setDetail(`従業員一覧を取得できませんでした\n\n${j.error}`);
       else setEmployees(j.employees ?? []);
     } catch (err: any) {
-      alert(`従業員一覧を取得できませんでした: ${err.message}`);
+      setDetail(`従業員一覧を取得できませんでした\n\n${err.message}`);
     }
     setEmpLoading(false);
   };
@@ -427,7 +429,7 @@ export function AttendanceAdmin() {
     setExporting(false);
 
     if (e) {
-      alert(`CSVを出力できませんでした: ${e.message}`);
+      setDetail(`CSVを出力できませんでした\n\n${e.message}`);
       return;
     }
     const list = ((data as any)?.rows ?? []) as any[];
@@ -514,13 +516,20 @@ export function AttendanceAdmin() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const j = await res.json();
-      if (j.error) setSyncResult(`エラー: ${j.error}`);
-      else if (j.configured === false) setSyncResult(j.message || 'freee 連携は未設定です');
-      else
-        setSyncResult(
-          `送信 ${j.sent} 件 / 対象外 ${j.skipped} 件 / 失敗 ${j.failed} 件` +
-            (j.errors?.length ? `\n${j.errors.join('\n')}` : '')
-        );
+      if (j.error) {
+        setSyncResult(`エラー: ${j.error}`);
+        setDetail(`freee への送信に失敗しました\n\n${j.error}`);
+      } else if (j.configured === false) {
+        setSyncResult(j.message || 'freee 連携は未設定です');
+      } else {
+        setSyncResult(`送信 ${j.sent} 件 / 対象外 ${j.skipped} 件 / 失敗 ${j.failed} 件`);
+        // 失敗の詳細は長いので、コピーできる詳細パネルに出す
+        if (j.errors?.length) {
+          setDetail(
+            `freee への送信で ${j.failed} 件失敗しました\n\n` + j.errors.join('\n\n')
+          );
+        }
+      }
     } catch (err: any) {
       setSyncResult(`エラー: ${err.message}`);
     }
@@ -588,6 +597,40 @@ export function AttendanceAdmin() {
 
   return (
     <div>
+      {/* エラー全文。alert と違い選択・コピーできる */}
+      {detail && (
+        <div className="mb-4 border-2 border-accent bg-red-50">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-accent text-paper">
+            <b className="font-mincho text-sm">エラーの詳細</b>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(detail).then(
+                    () => setDetail(detail + '\n\n(コピーしました)'),
+                    () => undefined
+                  );
+                }}
+                className="text-xs px-2.5 py-1 border-1.5 border-paper font-bold"
+              >
+                コピー
+              </button>
+              <button
+                onClick={() => setDetail(null)}
+                className="text-xs px-2.5 py-1 border-1.5 border-paper font-bold"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+          <textarea
+            readOnly
+            value={detail}
+            onFocus={(e) => e.currentTarget.select()}
+            className="w-full h-48 p-3 text-xs font-mono bg-paper border-0 resize-y"
+          />
+        </div>
+      )}
+
       {/* 日別 / 月別 の切替 */}
       <div className="flex border-2 border-ink mb-4 w-fit">
         {([
@@ -884,7 +927,11 @@ export function AttendanceAdmin() {
                     <button
                       onClick={() =>
                         r.freee_error
-                          ? alert(`${r.staff_name ?? r.staff_id} さんの打刻\n\n${r.freee_error}`)
+                          ? setDetail(
+                              `${r.staff_name ?? r.staff_id} さんの打刻 ` +
+                                `(${EVENT_LABEL[r.event_type]} ${jstTime(r.event_at)})\n\n` +
+                                r.freee_error
+                            )
                           : undefined
                       }
                       className={`inline-block px-2 py-0.5 font-bold border-1.5 border-ink ${
