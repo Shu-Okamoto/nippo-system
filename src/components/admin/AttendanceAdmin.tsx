@@ -461,6 +461,56 @@ export function AttendanceAdmin() {
     load();
   };
 
+  // 認可コードの貼り付け欄。未接続時だけでなく、スコープを変えて
+  // 認可し直す場面でも必要なので接続済みの表示からも使う
+  // コールバックが oob の場合は認可コードが画面に出るので手で貼る
+  const codeExchangeUi = (
+        <div className="mt-4 pt-4 border-t-2 border-dashed border-ink">
+          <b className="font-mincho block mb-1.5 text-sm">認可コードを貼り付けて接続</b>
+          <p className="text-xs text-muted mb-2 leading-relaxed">
+            freee アプリのコールバックURLが
+            <code className="font-mono mx-1">urn:ietf:wg:oauth:2.0:oob</code>
+            の場合、認可後にリダイレクトされず画面にコードが表示されます。
+            そのコードをここに貼ってください。
+            <b className="text-accent">コードは数分で失効し、一度しか使えません。</b>
+          </p>
+          <div className="flex gap-2 flex-wrap items-center">
+            <input
+              value={authCode}
+              onChange={(e) => setAuthCode(e.target.value)}
+              placeholder="認可コード"
+              className="p-2 border-2 border-ink bg-paper text-sm font-mono min-w-[260px]"
+            />
+            <button
+              onClick={exchangeAuthCode}
+              disabled={exchanging || !authCode.trim()}
+              className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+            >
+              {exchanging ? '接続中…' : '接続する'}
+            </button>
+          </div>
+          <details className="mt-2">
+            <summary className="text-xs text-muted cursor-pointer">
+              コールバックURLが oob 以外の場合
+            </summary>
+            <input
+              value={exchangeRedirect}
+              onChange={(e) => setExchangeRedirect(e.target.value)}
+              placeholder="認可時に使ったコールバックURL"
+              className="mt-2 w-full p-2 border-2 border-ink bg-paper text-xs font-mono"
+            />
+            <p className="mt-1 text-[11px] text-muted">
+              認可時に使った値と完全に一致している必要があります。空欄なら oob として扱います。
+            </p>
+          </details>
+          {exchangeResult && (
+            <pre className="mt-2 text-xs whitespace-pre-wrap font-mono bg-paper border-2 border-ink p-2">
+              {exchangeResult}
+            </pre>
+          )}
+        </div>
+  );
+
   const scoped = focusStaffId === null ? rows : rows.filter((r) => r.staff_id === focusStaffId);
   const visible = showVoided ? scoped : scoped.filter((r) => !r.is_voided);
   const voidedCount = scoped.filter((r) => r.is_voided).length;
@@ -880,51 +930,7 @@ export function AttendanceAdmin() {
               ↻ 接続状況を確認
             </button>
 
-            {/* コールバックが oob の場合は認可コードが画面に出るので手で貼る */}
-            <div className="mt-4 pt-4 border-t-2 border-dashed border-ink">
-              <b className="font-mincho block mb-1.5 text-sm">認可コードを貼り付けて接続</b>
-              <p className="text-xs text-muted mb-2 leading-relaxed">
-                freee アプリのコールバックURLが
-                <code className="font-mono mx-1">urn:ietf:wg:oauth:2.0:oob</code>
-                の場合、認可後にリダイレクトされず画面にコードが表示されます。
-                そのコードをここに貼ってください。
-                <b className="text-accent">コードは数分で失効し、一度しか使えません。</b>
-              </p>
-              <div className="flex gap-2 flex-wrap items-center">
-                <input
-                  value={authCode}
-                  onChange={(e) => setAuthCode(e.target.value)}
-                  placeholder="認可コード"
-                  className="p-2 border-2 border-ink bg-paper text-sm font-mono min-w-[260px]"
-                />
-                <button
-                  onClick={exchangeAuthCode}
-                  disabled={exchanging || !authCode.trim()}
-                  className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
-                >
-                  {exchanging ? '接続中…' : '接続する'}
-                </button>
-              </div>
-              <details className="mt-2">
-                <summary className="text-xs text-muted cursor-pointer">
-                  コールバックURLが oob 以外の場合
-                </summary>
-                <input
-                  value={exchangeRedirect}
-                  onChange={(e) => setExchangeRedirect(e.target.value)}
-                  placeholder="認可時に使ったコールバックURL"
-                  className="mt-2 w-full p-2 border-2 border-ink bg-paper text-xs font-mono"
-                />
-                <p className="mt-1 text-[11px] text-muted">
-                  認可時に使った値と完全に一致している必要があります。空欄なら oob として扱います。
-                </p>
-              </details>
-              {exchangeResult && (
-                <pre className="mt-2 text-xs whitespace-pre-wrap font-mono bg-paper border-2 border-ink p-2">
-                  {exchangeResult}
-                </pre>
-              )}
-            </div>
+            {codeExchangeUi}
           </>
         ) : (
           <>
@@ -1006,6 +1012,20 @@ export function AttendanceAdmin() {
           <pre className="mt-3 text-xs whitespace-pre-wrap font-mono bg-paper border-2 border-ink p-2">
             {syncResult}
           </pre>
+        )}
+
+        {/* 接続済みでも、スコープや事業所を変えたら認可し直す必要がある */}
+        {sync?.configured && sync?.connected && (
+          <details className="mt-4 pt-4 border-t-2 border-dashed border-ink">
+            <summary className="font-mincho font-bold text-sm cursor-pointer">
+              接続し直す(スコープや事業所を変えた場合)
+            </summary>
+            <p className="mt-2 text-xs text-muted leading-relaxed">
+              既存のトークンは認可した時点のスコープ・事業所のままです。
+              freee 側で権限を変えた場合は、認可をやり直して取得し直す必要があります。
+            </p>
+            {codeExchangeUi}
+          </details>
         )}
       </div>
     </div>
