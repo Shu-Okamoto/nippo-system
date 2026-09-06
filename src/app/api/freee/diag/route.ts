@@ -215,17 +215,8 @@ export async function GET(req: NextRequest) {
     checks.length > 0 && checks.every((c) => c.status === 401);
 
   return NextResponse.json({
-    hr_access: { ok: true },
-    scope_requested: process.env.FREEE_SCOPE ?? '(未設定)',
-    scope_granted: (await grantedScope(sb)) ?? '(不明。接続し直すと記録されます)',
-    company_id: process.env.FREEE_COMPANY_ID,
-    companies: companyChecks,
-    date: today,
-    self_employee_id: selfEmployeeId,
-    self_check: selfCheck,
-    work_record_check: workRecordCheck,
-    available_types: checks,
-    next_punch: samplePayload,
+    // 判断に必要な項目を先に置く。下の配列が長く、末尾だけ見ると
+    // 肝心の結論を見落とすため
     ...(allUnauthorized
       ? {
           problem:
@@ -251,5 +242,16 @@ export async function GET(req: NextRequest) {
             'FREEE_SCOPE に設定して再デプロイのうえ、認可し直してください。',
         }
       : {}),
+    self_employee_id: selfEmployeeId,
+    self_check: selfCheck,
+    work_record_check: workRecordCheck,
+    company_id: process.env.FREEE_COMPANY_ID,
+    scope_granted: (await grantedScope(sb)) ?? '(不明。接続し直すと記録されます)',
+    scope_requested: process.env.FREEE_SCOPE ?? '(未設定)',
+    hr_access: { ok: true },
+    date: today,
+    companies: companyChecks,
+    available_types: checks,
+    next_punch: samplePayload,
   });
 }
