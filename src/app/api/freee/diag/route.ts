@@ -12,6 +12,7 @@ import {
   getAccessToken,
   getAvailableTypes,
   getHrMe,
+  getWorkRecord,
   grantedScope,
   isConnected,
   isFreeeConfigured,
@@ -192,6 +193,22 @@ export async function GET(req: NextRequest) {
     selfCheck = { freee_employee_id: selfEmployeeId, ok: r.ok, status: r.status, response: r.body };
   }
 
+  // 打刻(time_clocks)と勤務実績(work_records)は同じ /employees/{id}/
+  // 配下。両方落ちれば従業員単位API全体が使えないと分かるし、
+  // work_records だけ通るなら書き込み方式を変える余地がある
+  let workRecordCheck: unknown = null;
+  const firstStaff = ((staff || []) as any[])[0];
+  if (firstStaff?.freee_employee_id) {
+    const r = await getWorkRecord(accessToken, String(firstStaff.freee_employee_id), today);
+    workRecordCheck = {
+      staff: firstStaff.name,
+      freee_employee_id: firstStaff.freee_employee_id,
+      ok: r.ok,
+      status: r.status,
+      response: r.body,
+    };
+  }
+
   const allForbidden =
     checks.length > 0 && checks.every((c) => c.status === 403);
   const allUnauthorized =
@@ -206,6 +223,7 @@ export async function GET(req: NextRequest) {
     date: today,
     self_employee_id: selfEmployeeId,
     self_check: selfCheck,
+    work_record_check: workRecordCheck,
     available_types: checks,
     next_punch: samplePayload,
     ...(allUnauthorized

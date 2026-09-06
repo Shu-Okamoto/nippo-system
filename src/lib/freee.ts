@@ -158,6 +158,36 @@ export async function probeCompany(
   };
 }
 
+/**
+ * 勤怠情報(勤務実績)を1日分読む。
+ *
+ * 打刻(time_clocks)と同じ /employees/{id}/ 配下なので、
+ * こちらも通らなければ従業員単位API全体が使えないと分かる。
+ * 逆にこちらが通るなら、打刻ではなく勤務実績を書く方式に
+ * 切り替えられる可能性がある。
+ */
+export async function getWorkRecord(
+  accessToken: string,
+  employeeId: string,
+  date: string
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const path = encodeURIComponent(employeeId.trim());
+  const params = new URLSearchParams({
+    company_id: String(process.env.FREEE_COMPANY_ID),
+  });
+  const res = await fetch(
+    `${API_BASE}/hr/api/v1/employees/${path}/work_records/${date}?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
+}
+
 /** freee人事労務の従業員一覧。従業員IDをスタッフマスタに転記するために使う */
 export async function listEmployees(accessToken: string): Promise<unknown> {
   const now = new Date();
