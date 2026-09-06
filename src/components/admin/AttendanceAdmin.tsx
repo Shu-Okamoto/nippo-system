@@ -136,6 +136,7 @@ export function AttendanceAdmin() {
   const [empLoading, setEmpLoading] = useState(false);
   const [diag, setDiag] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [authCode, setAuthCode] = useState('');
   const [exchangeRedirect, setExchangeRedirect] = useState('');
   const [exchanging, setExchanging] = useState(false);
@@ -409,6 +410,73 @@ export function AttendanceAdmin() {
     setExchanging(false);
   };
 
+  // 勤怠CSVの書き出し。freee の勤怠インポートに取り込む用途を想定。
+  // 期間は月別ビューで選んでいる月をそのまま使う
+  const exportCsv = async () => {
+    if (!slug) return;
+    setExporting(true);
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+    const { data, error: e } = await supabase.rpc('get_attendance_export', {
+      p_slug: slug,
+      p_from: from,
+      p_to: to,
+    });
+    setExporting(false);
+
+    if (e) {
+      alert(`CSVを出力できませんでした: ${e.message}`);
+      return;
+    }
+    const list = ((data as any)?.rows ?? []) as any[];
+    if (list.length === 0) {
+      alert('この期間に打刻がありません');
+      return;
+    }
+
+    const header = [
+      '従業員ID',
+      '氏名',
+      '日付',
+      '出勤時刻',
+      '退勤時刻',
+      '休憩時間(分)',
+      '実働時間',
+    ];
+    // 値にカンマや引用符が入っても壊れないよう全項目を引用符で囲む
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      header.map(esc).join(','),
+      ...list.map((r) =>
+        [
+          r.freee_employee_id ?? '',
+          r.staff_name,
+          r.date,
+          r.start_time ?? '',
+          r.end_time ?? '',
+          r.break_minutes ?? 0,
+          r.work_minutes !== null ? formatMinutesAsHours(r.work_minutes) : '',
+        ]
+          .map(esc)
+          .join(',')
+      ),
+    ];
+
+    // Excel が UTF-8 と判別できるよう BOM を付ける
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const storeName = stores.find((st) => st.id === storeId)?.name ?? 'store';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `勤怠_${storeName}_${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const runDiag = async () => {
     setDiagLoading(true);
     setDiag(null);
@@ -624,6 +692,14 @@ export function AttendanceAdmin() {
             </select>
             <button onClick={loadMonth} className="px-3 py-2 border-2 border-ink font-bold text-sm">
               ↻ 更新
+            </button>
+            {/* メンバー選択に関係なく、その月の全員分を書き出す */}
+            <button
+              onClick={exportCsv}
+              disabled={exporting}
+              className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+            >
+              {exporting ? '出力中…' : '📄 CSV出力(全員)'}
             </button>
           </>
         )}
