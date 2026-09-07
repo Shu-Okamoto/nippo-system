@@ -137,6 +137,7 @@ export function AttendanceAdmin() {
   const [diag, setDiag] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [wrSyncing, setWrSyncing] = useState(false);
   // エラー全文の表示用。alert だと本文をコピーできず、原因の共有ができない
   const [detail, setDetail] = useState<string | null>(null);
   const [authCode, setAuthCode] = useState('');
@@ -479,6 +480,104 @@ export function AttendanceAdmin() {
     URL.revokeObjectURL(url);
   };
 
+  // 過去分を勤務実績(work_records)として送る。
+  // 打刻APIは当日分しか通らないため、遡って入れるのはこちら
+  const syncWorkRecords = async () => {
+    if (!slug) return;
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+    if (
+      !confirm(
+        `${month} の勤怠を freee の勤務実績として送信します。\n` +
+          'freee 側の同じ日の勤務実績は上書きされます。よろしいですか?'
+      )
+    ) {
+      return;
+    }
+
+    setWrSyncing(true);
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      setWrSyncing(false);
+      setDetail('ログインし直してください');
+      return;
+    }
+    try {
+      const res = await fetch('/api/freee/sync-work-records', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, from, to }),
+      });
+      const j = await res.json();
+      if (j.error) {
+        setDetail(`勤務実績の送信に失敗しました\n\n${j.error}`);
+      } else {
+        const head =
+          `${month} の勤務実績を送信しました\n\n` +
+          `送信 ${j.sent} 件 / 対象外 ${j.skipped} 件 / 失敗 ${j.failed} 件` +
+          (j.truncated ? `\n(全 ${j.total} 件のうち先頭 100 件のみ。再実行で続きを送れます)` : '');
+        setDetail(j.errors?.length ? `${head}\n\n${j.errors.join('\n\n')}` : head);
+      }
+    } catch (err: any) {
+      setDetail(`勤務実績の送信に失敗しました\n\n${err.message}`);
+    }
+    setWrSyncing(false);
+    loadSyncInfo();
+  };
+
+  // 勤務実績で送った月の打刻は、打刻APIで送る必要がなくなる
+  const skipPunches = async () => {
+    if (!slug) return;
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+    if (
+      !confirm(
+        `${month} の未送信・エラーの打刻を、打刻APIの送信対象から外します。\n` +
+          '勤務実績として送信済みの月に使ってください。よろしいですか?'
+      )
+    ) {
+      return;
+    }
+    const { data, error: e } = await supabase.rpc('skip_freee_punches', {
+      p_slug: slug,
+      p_from: from,
+      p_to: to,
+    });
+    if (e) {
+      setDetail(`対象外にできませんでした\n\n${e.message}`);
+      return;
+    }
+    setDetail(`${data} 件を打刻APIの送信対象から外しました`);
+    loadSyncInfo();
+    load();
+  };
+
+  // 原因を直したあと、エラー分をまとめて再送対象に戻す
+  const retryErrors = async () => {
+    if (!slug) return;
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+    const { data, error: e } = await supabase.rpc('retry_freee_errors', {
+      p_slug: slug,
+      p_from: from,
+      p_to: to,
+    });
+    if (e) {
+      setDetail(`再送対象に戻せませんでした\n\n${e.message}`);
+      return;
+    }
+    setDetail(`${data} 件を再送対象(未送信)に戻しました`);
+    loadSyncInfo();
+    load();
+  };
+
   const runDiag = async () => {
     setDiagLoading(true);
     setDiag(null);
@@ -744,6 +843,15 @@ export function AttendanceAdmin() {
             >
               {exporting ? '出力中…' : '📄 CSV出力(全員)'}
             </button>
+            {sync?.connected && (
+              <button
+                onClick={syncWorkRecords}
+                disabled={wrSyncing}
+                className="px-4 py-2 bg-accent text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+              >
+                {wrSyncing ? '送信中…' : '↗ この月をfreeeへ(勤務実績)'}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -1068,13 +1176,31 @@ export function AttendanceAdmin() {
                 「要手動修正」は freee 送信後に直した打刻です。freee 側は手で直してください。
               </span>
             </p>
+            <p className="text-xs text-muted mb-2 leading-relaxed">
+              「freee に送信」は打刻APIを使うため<b>当日分しか通りません</b>。
+              過去分は月別ビューの「この月をfreeeへ(勤務実績)」で送ってください。
+            </p>
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={runSync}
                 disabled={syncing}
                 className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
               >
-                {syncing ? '送信中…' : 'freee に送信'}
+                {syncing ? '送信中…' : 'freee に送信(当日分)'}
+              </button>
+              <button
+                onClick={retryErrors}
+                className="px-4 py-2 border-2 border-ink font-mincho font-bold text-sm"
+                title={`${month} のエラー・対象外を未送信に戻す`}
+              >
+                ↻ {month} のエラーを再送対象に
+              </button>
+              <button
+                onClick={skipPunches}
+                className="px-4 py-2 border-2 border-ink font-mincho font-bold text-sm"
+                title={`${month} の未送信・エラーを送信対象から外す`}
+              >
+                ✓ {month} を送信対象から外す
               </button>
               <button
                 onClick={loadEmployees}

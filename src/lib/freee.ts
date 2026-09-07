@@ -188,6 +188,61 @@ export async function getWorkRecord(
   return { ok: res.ok, status: res.status, body };
 }
 
+/**
+ * 勤務実績を1日分まとめて書き込む。
+ *
+ * 打刻API(time_clocks)は当日の打刻を順に積む仕組みで過去日に使えない。
+ * こちらは1日分の出退勤・休憩をまとめて設定でき、同じ日に何度実行しても
+ * 同じ結果になる(PUT なので上書き)ため、過去分の同期に向く。
+ *
+ * break_records の clock_in_at / clock_out_at は
+ * 「休憩開始 / 休憩終了」の意味。紛らわしいが freee の仕様。
+ */
+export async function putWorkRecord(
+  accessToken: string,
+  employeeId: string,
+  date: string,
+  clockIn: string,
+  clockOut: string,
+  breaks: { begin: string; end: string | null }[]
+): Promise<unknown> {
+  const path = encodeURIComponent(employeeId.trim());
+  const payload = {
+    company_id: Number(process.env.FREEE_COMPANY_ID),
+    break_records: breaks
+      .filter((b) => b.end)
+      .map((b) => ({
+        clock_in_at: `${date} ${b.begin}:00`,
+        clock_out_at: `${date} ${b.end}:00`,
+      })),
+    clock_in_at: `${date} ${clockIn}:00`,
+    clock_out_at: `${date} ${clockOut}:00`,
+  };
+
+  const res = await fetch(`${API_BASE}/hr/api/v1/employees/${path}/work_records/${date}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail =
+      json?.errors?.[0]?.messages?.[0] || json?.message || json?.error_description || '';
+    throw new Error(
+      `勤務実績の登録に失敗しました (${res.status})${detail ? `: ${detail}` : ''}\n` +
+        `送信先: PUT /hr/api/v1/employees/${path}/work_records/${date}\n` +
+        `送信内容: ${JSON.stringify(payload)}\n` +
+        `freee応答: ${JSON.stringify(json).slice(0, 600)}`
+    );
+  }
+  return json;
+}
+
 /** freee人事労務の従業員一覧。従業員IDをスタッフマスタに転記するために使う */
 export async function listEmployees(accessToken: string): Promise<unknown> {
   const now = new Date();
