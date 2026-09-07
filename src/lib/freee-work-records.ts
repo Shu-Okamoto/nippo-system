@@ -10,6 +10,8 @@ export type WorkRecordResult = {
   skipped: number;
   failed: number;
   errors: string[];
+  // 送れなかった日と理由。退勤の打刻もれに気付けるようにする
+  skippedDetails: string[];
   total: number;
   truncated: boolean;
 };
@@ -43,15 +45,27 @@ export async function pushWorkRecords(
   let skipped = 0;
   let failed = 0;
   const errors: string[] = [];
+  const skippedDetails: string[] = [];
 
   for (const r of rows.slice(0, LIMIT)) {
     const start = r.rounded_start_time;
     const end = r.rounded_end_time;
 
     // 従業員ID未設定、出退勤が揃っていない、丸めた結果 退勤 <= 出勤
-    // (1分だけの打刻など)は送れない
-    if (!r.freee_employee_id || !start || !end || r.work_minutes === null) {
+    // (1分だけの打刻など)は送れない。
+    // 特に退勤の打刻もれは freee 側が出勤したままになるので、
+    // 理由を返して気付けるようにする
+    let reason: string | null = null;
+    if (!r.freee_employee_id) reason = 'freee従業員IDが未設定';
+    else if (!start) reason = '出勤の打刻がありません';
+    else if (!end) reason = '退勤の打刻がありません';
+    else if (r.work_minutes === null) reason = '丸めた結果、実働が0以下になります';
+
+    if (reason) {
       skipped++;
+      if (skippedDetails.length < 20) {
+        skippedDetails.push(`${r.staff_name} ${r.date}: ${reason}`);
+      }
       continue;
     }
 
@@ -82,6 +96,7 @@ export async function pushWorkRecords(
     skipped,
     failed,
     errors,
+    skippedDetails,
     total: rows.length,
     truncated: rows.length > LIMIT,
   };

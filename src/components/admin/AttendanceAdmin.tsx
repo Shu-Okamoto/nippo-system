@@ -515,11 +515,20 @@ export function AttendanceAdmin() {
       if (j.error) {
         setDetail(`勤務実績の送信に失敗しました\n\n${j.error}`);
       } else {
-        const head =
-          `${month} の勤務実績を送信しました\n\n` +
+        const parts = [
+          `${month} の勤務実績を送信しました`,
+          '',
           `送信 ${j.sent} 件 / 対象外 ${j.skipped} 件 / 失敗 ${j.failed} 件` +
-          (j.truncated ? `\n(全 ${j.total} 件のうち先頭 100 件のみ。再実行で続きを送れます)` : '');
-        setDetail(j.errors?.length ? `${head}\n\n${j.errors.join('\n\n')}` : head);
+            (j.truncated ? `\n(全 ${j.total} 件のうち先頭 100 件のみ。再実行で続きを送れます)` : ''),
+        ];
+        // 対象外の理由を出す。退勤の打刻もれはここで気付ける
+        if (j.skippedDetails?.length) {
+          parts.push('', '【送信されなかった日】', j.skippedDetails.join('\n'));
+        }
+        if (j.errors?.length) {
+          parts.push('', '【失敗】', j.errors.join('\n\n'));
+        }
+        setDetail(parts.join('\n'));
       }
     } catch (err: any) {
       setDetail(`勤務実績の送信に失敗しました\n\n${err.message}`);
