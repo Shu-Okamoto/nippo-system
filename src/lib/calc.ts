@@ -40,12 +40,29 @@ export function floorToUnit(min: number, unit = ROUND_UNIT_MIN): number {
 }
 
 /**
+ * 休憩時間の丸め。「次の15分区切りまで上げる」。
+ * 区切りちょうどの値も、その次の区切りに上がる。
+ *
+ *    1〜14分 → 15分
+ *   15〜29分 → 30分
+ *   30〜44分 → 45分
+ *   45〜59分 → 60分
+ *
+ * 単純な切り上げだと 45分がそのまま45分になり運用と合わない。
+ * 0分は0分のまま(休憩を取っていない日を15分にはしない)。
+ */
+export function roundBreakMinutes(min: number, unit = ROUND_UNIT_MIN): number {
+  if (min <= 0) return 0;
+  return (Math.floor(min / unit) + 1) * unit;
+}
+
+/**
  * 実働分数を返す。
  *
  * 15分丸めのルール:
  *   出勤時刻 … 切り上げ(09:01 → 09:15)
  *   退勤時刻 … 切り捨て(17:14 → 17:00)
- *   休憩時間 … 切り上げ(47分 → 60分)
+ *   休憩時間 … 次の15分区切りまで上げる(45分 → 60分)
  *
  * 出退勤とも15分境界に丸めるので、その差は必ず15の倍数になる。
  * 休憩も15の倍数なので、実働は常に0.25時間刻みになる。
@@ -76,8 +93,7 @@ export function shiftMinutes(s: ShiftEntry): number {
 
   startMin = ceilToUnit(startMin);
   endMin = floorToUnit(endMin);
-  // 休憩0分はそのまま。切り上げで15分にしてしまわないようにする
-  breakMin = breakMin > 0 ? ceilToUnit(breakMin) : 0;
+  breakMin = roundBreakMinutes(breakMin);
 
   if (endMin <= startMin) return 0;
   return Math.max(0, endMin - startMin - breakMin);
