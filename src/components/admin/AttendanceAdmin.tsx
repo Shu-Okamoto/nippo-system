@@ -1177,8 +1177,12 @@ export function AttendanceAdmin() {
               </span>
             </p>
             <p className="text-xs text-muted mb-2 leading-relaxed">
-              「freee に送信」は打刻APIを使うため<b>当日分しか通りません</b>。
-              過去分は月別ビューの「この月をfreeeへ(勤務実績)」で送ってください。
+              毎日 <b>18時に自動送信</b>されます(当日の打刻 → 勤務実績の順)。
+              下のボタンは手動で送りたいときだけ使ってください。
+              <br />
+              freee の打刻APIは過去日を受け付けないため、
+              「freee に送信」は<b>当日分のみ</b>を対象にします。
+              過去分は月別ビューの「この月をfreeeへ(勤務実績)」で送ります。
             </p>
             <div className="flex gap-2 flex-wrap">
               <button

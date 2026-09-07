@@ -14,17 +14,12 @@ import {
   getAccessToken,
   isConnected,
   isFreeeConfigured,
-  postTimeClock,
   serviceClient,
-  toJstDateTime,
-  type FreeeClockType,
 } from '@/lib/freee';
+import { pushPendingPunches } from '@/lib/freee-punches';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-// 1回の実行で送る上限。タイムアウトを避けるため
-const BATCH_LIMIT = 50;
 
 async function authorize(req: NextRequest): Promise<string | null> {
   const secret = process.env.CRON_SECRET;
@@ -83,21 +78,6 @@ export async function POST(req: NextRequest) {
 
   const sb = serviceClient();
 
-  const { data: events, error: e1 } = await sb
-    .from('time_clock_events')
-    .select('id, staff_id, work_date, event_type, event_at, staff(name, freee_employee_id)')
-    .eq('freee_status', 'pending')
-    .eq('is_voided', false)
-    .order('event_at')
-    .limit(BATCH_LIMIT);
-
-  if (e1) {
-    return NextResponse.json({ error: `打刻の取得に失敗しました: ${e1.message}` }, { status: 500 });
-  }
-  if (!events || events.length === 0) {
-    return NextResponse.json({ configured: true, sent: 0, skipped: 0, failed: 0 });
-  }
-
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sb);
@@ -105,62 +85,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 502 });
   }
 
-  let sent = 0;
-  let skipped = 0;
-  let failed = 0;
-  const errors: string[] = [];
+  // 当日分だけを送る。freee の打刻APIは過去日を受け付けず
+  // 「打刻の時間が正しくありません」で弾かれるため。
+  // 過去分は勤務実績(work_records)側で送る
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
-  for (const ev of events as any[]) {
-    const employeeId: string | null = ev.staff?.freee_employee_id ?? null;
-
-    // freee 従業員IDが未設定のスタッフは送りようがないので skipped にする。
-    // (スタッフマスタで ID を設定したら、その後の打刻から送られる)
-    if (!employeeId) {
-      await sb
-        .from('time_clock_events')
-        .update({
-          freee_status: 'skipped',
-          freee_error: 'freee従業員IDが未設定です',
-          freee_synced_at: new Date().toISOString(),
-        })
-        .eq('id', ev.id);
-      skipped++;
-      continue;
-    }
-
-    const { baseDate, datetime } = toJstDateTime(ev.event_at);
-
-    try {
-      await postTimeClock(
-        accessToken,
-        String(employeeId),
-        ev.event_type as FreeeClockType,
-        baseDate,
-        datetime
-      );
-      await sb
-        .from('time_clock_events')
-        .update({
-          freee_status: 'sent',
-          freee_error: null,
-          freee_synced_at: new Date().toISOString(),
-        })
-        .eq('id', ev.id);
-      sent++;
-    } catch (err: any) {
-      const msg = String(err?.message ?? err).slice(0, 500);
-      await sb
-        .from('time_clock_events')
-        .update({
-          freee_status: 'error',
-          freee_error: msg,
-          freee_synced_at: new Date().toISOString(),
-        })
-        .eq('id', ev.id);
-      failed++;
-      if (errors.length < 5) errors.push(`${ev.staff?.name ?? ev.staff_id}: ${msg}`);
-    }
+  try {
+    const result = await pushPendingPunches(sb, accessToken, today);
+    return NextResponse.json({ configured: true, ...result });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
-
-  return NextResponse.json({ configured: true, sent, skipped, failed, errors });
 }
