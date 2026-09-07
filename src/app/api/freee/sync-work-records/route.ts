@@ -11,19 +11,11 @@
 // もう一度流せばよい。
 
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getAccessToken,
-  isConnected,
-  isFreeeConfigured,
-  putWorkRecord,
-  serviceClient,
-} from '@/lib/freee';
+import { getAccessToken, isConnected, isFreeeConfigured, serviceClient } from '@/lib/freee';
+import { pushWorkRecords } from '@/lib/freee-work-records';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-// 1回の実行で送る上限。タイムアウトを避けるため
-const LIMIT = 100;
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get('authorization');
@@ -61,20 +53,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '店舗と期間を指定してください' }, { status: 400 });
   }
 
-  const { data: exported, error: e1 } = await sb.rpc('get_attendance_export', {
-    p_slug: body.slug,
-    p_from: body.from,
-    p_to: body.to,
-  });
-  if (e1) {
-    return NextResponse.json({ error: `勤怠の取得に失敗しました: ${e1.message}` }, { status: 500 });
-  }
-
-  const rows = ((exported as any)?.rows ?? []) as any[];
-  if (rows.length === 0) {
-    return NextResponse.json({ sent: 0, skipped: 0, failed: 0, errors: [] });
-  }
-
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sb);
@@ -82,41 +60,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 502 });
   }
 
-  let sent = 0;
-  let skipped = 0;
-  let failed = 0;
-  const errors: string[] = [];
-
-  for (const r of rows.slice(0, LIMIT)) {
-    // 従業員ID未設定、または出退勤が揃っていない日は送れない
-    if (!r.freee_employee_id || !r.start_time || !r.end_time) {
-      skipped++;
-      continue;
-    }
-    try {
-      await putWorkRecord(
-        accessToken,
-        String(r.freee_employee_id),
-        r.date,
-        r.start_time,
-        r.end_time,
-        (r.breaks ?? []) as { begin: string; end: string | null }[]
-      );
-      sent++;
-    } catch (err: any) {
-      failed++;
-      if (errors.length < 10) {
-        errors.push(`${r.staff_name} ${r.date}: ${String(err?.message ?? err).slice(0, 500)}`);
-      }
-    }
+  try {
+    const result = await pushWorkRecords(sb, accessToken, body.slug, body.from, body.to);
+    return NextResponse.json(result);
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
-
-  return NextResponse.json({
-    sent,
-    skipped,
-    failed,
-    errors,
-    total: rows.length,
-    truncated: rows.length > LIMIT,
-  });
 }

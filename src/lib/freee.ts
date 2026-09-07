@@ -204,17 +204,37 @@ export async function putWorkRecord(
   date: string,
   clockIn: string,
   clockOut: string,
-  breaks: { begin: string; end: string | null }[]
+  breakMinutes: number,
+  firstBreakBegin: string | null
 ): Promise<unknown> {
   const path = encodeURIComponent(employeeId.trim());
+  const toMin = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+  const fmt = (min: number) =>
+    `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+  // 休憩は「丸めた合計と一致する1本」として送る。
+  // 実際の休憩が47分でも丸めて60分にするため、実打刻の入り/戻りを
+  // そのまま送ると freee 側の計算が画面の実働と食い違ってしまう。
+  const breakRecords: { clock_in_at: string; clock_out_at: string }[] = [];
+  if (breakMinutes > 0) {
+    const startMin = toMin(clockIn);
+    const endMin = toMin(clockOut);
+    // 休憩の開始は実際の入り時刻に寄せる。無ければ勤務の中間に置く
+    let bStart = firstBreakBegin ? toMin(firstBreakBegin) : startMin + Math.floor((endMin - startMin) / 2);
+    // 勤務時間内に収める。はみ出すと freee 側で弾かれる
+    bStart = Math.max(startMin, Math.min(bStart, endMin - breakMinutes));
+    breakRecords.push({
+      clock_in_at: `${date} ${fmt(bStart)}:00`,
+      clock_out_at: `${date} ${fmt(bStart + breakMinutes)}:00`,
+    });
+  }
+
   const payload = {
     company_id: Number(process.env.FREEE_COMPANY_ID),
-    break_records: breaks
-      .filter((b) => b.end)
-      .map((b) => ({
-        clock_in_at: `${date} ${b.begin}:00`,
-        clock_out_at: `${date} ${b.end}:00`,
-      })),
+    break_records: breakRecords,
     clock_in_at: `${date} ${clockIn}:00`,
     clock_out_at: `${date} ${clockOut}:00`,
   };

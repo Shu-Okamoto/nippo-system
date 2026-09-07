@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/freee-daily",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}
