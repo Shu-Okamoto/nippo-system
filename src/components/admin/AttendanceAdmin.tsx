@@ -515,11 +515,20 @@ export function AttendanceAdmin() {
       if (j.error) {
         setDetail(`勤務実績の送信に失敗しました\n\n${j.error}`);
       } else {
-        const head =
-          `${month} の勤務実績を送信しました\n\n` +
+        const parts = [
+          `${month} の勤務実績を送信しました`,
+          '',
           `送信 ${j.sent} 件 / 対象外 ${j.skipped} 件 / 失敗 ${j.failed} 件` +
-          (j.truncated ? `\n(全 ${j.total} 件のうち先頭 100 件のみ。再実行で続きを送れます)` : '');
-        setDetail(j.errors?.length ? `${head}\n\n${j.errors.join('\n\n')}` : head);
+            (j.truncated ? `\n(全 ${j.total} 件のうち先頭 100 件のみ。再実行で続きを送れます)` : ''),
+        ];
+        // 対象外の理由を出す。退勤の打刻もれはここで気付ける
+        if (j.skippedDetails?.length) {
+          parts.push('', '【送信されなかった日】', j.skippedDetails.join('\n'));
+        }
+        if (j.errors?.length) {
+          parts.push('', '【失敗】', j.errors.join('\n\n'));
+        }
+        setDetail(parts.join('\n'));
       }
     } catch (err: any) {
       setDetail(`勤務実績の送信に失敗しました\n\n${err.message}`);
@@ -1177,8 +1186,12 @@ export function AttendanceAdmin() {
               </span>
             </p>
             <p className="text-xs text-muted mb-2 leading-relaxed">
-              「freee に送信」は打刻APIを使うため<b>当日分しか通りません</b>。
-              過去分は月別ビューの「この月をfreeeへ(勤務実績)」で送ってください。
+              毎日 <b>18時に自動送信</b>されます(当日の打刻 → 勤務実績の順)。
+              下のボタンは手動で送りたいときだけ使ってください。
+              <br />
+              freee の打刻APIは過去日を受け付けないため、
+              「freee に送信」は<b>当日分のみ</b>を対象にします。
+              過去分は月別ビューの「この月をfreeeへ(勤務実績)」で送ります。
             </p>
             <div className="flex gap-2 flex-wrap">
               <button

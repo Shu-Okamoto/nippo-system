@@ -1,4 +1,8 @@
-// 当日分の勤務実績を freee に自動送信する(Vercel Cron から呼ばれる)。
+// 当日分を freee に自動送信する(Vercel Cron から呼ばれる)。
+//
+// 打刻(実打刻)→ 勤務実績(丸め後)の順に送る。
+// freee 側には実際に押した時刻の記録が残りつつ、労働時間は丸め後で
+// 確定する。勤務実績は PUT なので、打刻から計算された値を上書きする。
 //
 //   GET /api/cron/freee-daily
 //     Authorization: Bearer <CRON_SECRET>   (Vercel Cron が自動で付ける)
@@ -12,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAccessToken, isConnected, isFreeeConfigured, serviceClient } from '@/lib/freee';
+import { pushPendingPunches } from '@/lib/freee-punches';
 import { pushWorkRecords } from '@/lib/freee-work-records';
 
 export const dynamic = 'force-dynamic';
@@ -57,14 +62,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `店舗を取得できません: ${error.message}` }, { status: 500 });
   }
 
-  const results: Record<string, unknown> = {};
+  // (1) 当日の打刻を送る。実打刻の記録を freee に残すため。
+  //     店舗横断で未送信をまとめて処理する
+  let punches: unknown;
+  try {
+    punches = await pushPendingPunches(sb, accessToken, today);
+  } catch (err: any) {
+    punches = { error: String(err?.message ?? err).slice(0, 500) };
+  }
+
+  // (2) 勤務実績を送る。丸め後の労働時間で確定させる。
+  //     打刻が失敗していてもこちらは通るので、給与計算に必要な値は入る
+  const workRecords: Record<string, unknown> = {};
   for (const slug of ((slugs ?? []) as string[])) {
     try {
-      results[slug] = await pushWorkRecords(sb, accessToken, slug, today, today);
+      workRecords[slug] = await pushWorkRecords(sb, accessToken, slug, today, today);
     } catch (err: any) {
-      results[slug] = { error: String(err?.message ?? err).slice(0, 500) };
+      workRecords[slug] = { error: String(err?.message ?? err).slice(0, 500) };
     }
   }
 
-  return NextResponse.json({ date: today, results });
+  return NextResponse.json({ date: today, punches, work_records: workRecords });
 }
