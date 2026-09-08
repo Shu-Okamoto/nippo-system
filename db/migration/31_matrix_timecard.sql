@@ -5,7 +5,8 @@
 -- 出退勤・休憩もセルに出せる。
 --
 -- セルを数値(分)から、明細を持つオブジェクトに変える。
---   { start, end, break, work }
+--   { start, end, break, breaks, work }
+-- breaks は休憩の入り/戻りの配列。1日に複数回あり得る。
 --
 -- 時刻は打刻そのまま、work は15分丸め後。
 -- 日別ビューや月別(メンバー)と同じ扱いにする。
@@ -60,7 +61,8 @@ BEGIN
         cs.start_time,
         cs.end_time,
         cs.break_minutes,
-        cs.work_minutes
+        cs.work_minutes,
+        cs.breaks
       FROM m
       CROSS JOIN d
       JOIN LATERAL nippo.clock_summary(m.id, d.work_date) cs ON true
@@ -94,6 +96,7 @@ BEGIN
             'start', to_char(c.start_time, 'HH24:MI'),
             'end',   to_char(c.end_time,   'HH24:MI'),
             'break', c.break_minutes,
+            'breaks', c.breaks,
             'work',  COALESCE(c.work_minutes, 0)
           ) ORDER BY c.work_date
         ) AS cells,

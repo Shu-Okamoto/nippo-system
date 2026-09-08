@@ -64,6 +64,7 @@ type MatrixCell = {
   start: string | null;
   end: string | null;
   break: number;
+  breaks: BreakSpan[];
   work: number;
 };
 
@@ -1634,26 +1635,41 @@ function StoreMonthView({
                     if (!timecard) {
                       return (
                         <td key={m.staff_id} className="p-2 font-mono text-center">
-                          {formatMinutesAsHours(c.work)}
+                          {formatMinutesAsHours(c.work)}h
                         </td>
                       );
                     }
                     return (
                       <td key={m.staff_id} className="p-1.5 text-center font-mono leading-tight">
+                        {/* 1行目: 出退勤 */}
                         <div className="text-[11px]">
                           {c.start ?? '—'}
                           <span className="text-muted">〜</span>
                           {c.end ?? <span className="text-accent font-bold">未</span>}
                         </div>
-                        <div className="text-[10px] text-muted">
-                          {c.break > 0 ? `休${c.break}` : '休なし'}
+                        {/* 2行目: 休憩の入り〜戻り。複数回あれば並べる */}
+                        {c.breaks && c.breaks.length > 0 ? (
+                          c.breaks.map((b, bi) => (
+                            <div key={bi} className="text-[10px] text-muted">
+                              休 {b.begin}〜
+                              {b.end ?? <span className="text-accent font-bold">中</span>}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-[10px] text-stone-300">休なし</div>
+                        )}
+                        {/* 3行目: 実働と休憩合計をまとめる */}
+                        <div className="text-xs">
+                          <b>{formatMinutesAsHours(c.work)}h</b>
+                          {c.break > 0 && (
+                            <span className="text-[10px] text-muted ml-1.5">休{c.break}分</span>
+                          )}
                         </div>
-                        <div className="text-xs font-bold">{formatMinutesAsHours(c.work)}h</div>
                       </td>
                     );
                   })}
                   <td className="p-2 font-mono text-center font-bold border-l border-ink">
-                    {day_totals[i] > 0 ? formatMinutesAsHours(day_totals[i]) : '·'}
+                    {day_totals[i] > 0 ? `${formatMinutesAsHours(day_totals[i])}h` : '·'}
                   </td>
                 </tr>
               );
@@ -1664,14 +1680,14 @@ function StoreMonthView({
               <td className="p-2 border-r border-ink sticky left-0 bg-gold z-10 text-xs">合計</td>
               {members.map((m) => (
                 <td key={m.staff_id} className="p-2 font-mono text-center">
-                  {formatMinutesAsHours(m.total_minutes)}
+                  {formatMinutesAsHours(m.total_minutes)}h
                   <span className="block text-[10px] font-normal opacity-70">
                     {m.work_days}日
                   </span>
                 </td>
               ))}
               <td className="p-2 font-mono text-center border-l border-ink">
-                {formatMinutesAsHours(grand_total_minutes)}
+                {formatMinutesAsHours(grand_total_minutes)}h
               </td>
             </tr>
             <tr className="bg-paper2 border-t border-ink font-mincho font-bold">
