@@ -89,6 +89,7 @@ export function StaffMaster() {
   return (
     <div>
       <PunchPinSetting />
+      <MypageSetting />
 
       <table className="w-full border-2 border-ink bg-paper text-sm">
         <thead className="bg-ink text-paper">
@@ -101,6 +102,7 @@ export function StaffMaster() {
             <th className="p-2.5 text-center w-28">時給</th>
             <th className="p-2.5 text-center w-40">打刻PIN</th>
             <th className="p-2.5 text-center w-44">個人打刻URL</th>
+            <th className="p-2.5 text-center w-56">freeeログインID</th>
             <th className="p-2.5 text-center w-32">freee従業員ID</th>
             <th className="p-2.5 text-center">状態</th>
             <th className="p-2.5 text-center w-40">操作</th>
@@ -128,6 +130,14 @@ export function StaffMaster() {
               </td>
               <td className="p-2 text-center">
                 <ClockLinkCell staffId={r.id} name={r.name} info={privateMap[r.id]} onSaved={load} />
+              </td>
+              <td className="p-2 text-center">
+                <LoginEmailCell
+                  staffId={r.id}
+                  name={r.name}
+                  email={privateMap[r.id]?.freee_login_email ?? null}
+                  onSaved={load}
+                />
               </td>
               <td className="p-2 text-center">
                 <FreeeIdInput row={r} onSaved={load} />
@@ -525,6 +535,139 @@ function ClockLinkCell({
         className="text-[10px] px-2 py-1 border-1.5 border-accent text-accent font-bold"
       >
         失効
+      </button>
+    </div>
+  );
+}
+
+// freee 従業員マイページのURL。全員共通なので設定として1つ持つ
+function MypageSetting() {
+  const [url, setUrl] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  const load = async () => {
+    const { data } = await supabase.rpc('get_app_settings');
+    setUrl((data as any)?.freee_mypage_url ?? '');
+    setLoaded(true);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const save = async () => {
+    const { error } = await supabase.rpc('set_freee_mypage_url', { p_url: url.trim() || null });
+    if (error) {
+      alert(`保存できませんでした: ${error.message}`);
+      return;
+    }
+    alert('マイページURLを保存しました');
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="mb-4 p-4 border-2 border-ink bg-paper2">
+      <b className="font-mincho block mb-1">freee マイページURL(給与明細の配布用)</b>
+      <p className="text-xs text-muted mb-2 leading-relaxed">
+        LINE で [給料] と送られたときに案内するURLです。全員共通。
+        各メンバーのログインIDは下の表で設定します。
+        <b className="text-accent">パスワードは保持しません。</b>
+        本人が freee の招待メールから設定します。
+      </p>
+      <div className="flex gap-2 flex-wrap items-center">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://p.secure.freee.co.jp/ など"
+          className="flex-1 min-w-[280px] p-2 border-2 border-ink bg-paper text-sm font-mono"
+        />
+        <button
+          onClick={save}
+          className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm"
+        >
+          保存
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// freee ログインID。LINE 配布用テキストもここから作る
+function LoginEmailCell({
+  staffId,
+  name,
+  email,
+  onSaved,
+}: {
+  staffId: number;
+  name: string;
+  email: string | null;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(email ?? '');
+
+  useEffect(() => {
+    setText(email ?? '');
+  }, [staffId, email]);
+
+  const save = async () => {
+    const trimmed = text.trim();
+    if (trimmed === (email ?? '')) return;
+    const { error } = await supabase.rpc('set_staff_login_email', {
+      p_staff_id: staffId,
+      p_email: trimmed || null,
+    });
+    if (error) {
+      alert(`保存できませんでした: ${error.message}`);
+      setText(email ?? '');
+      return;
+    }
+    onSaved();
+  };
+
+  // DX 側の [給料] 応答にそのまま貼れる文面を作る
+  const copyMessage = async () => {
+    const { data } = await supabase.rpc('get_app_settings');
+    const url = (data as any)?.freee_mypage_url;
+    if (!url) {
+      alert('先に上の「freee マイページURL」を設定してください');
+      return;
+    }
+    if (!email) {
+      alert('先にこの人のログインIDを設定してください');
+      return;
+    }
+    const msg =
+      `${name} さんの給与明細はこちらから確認できます。\n\n` +
+      `${url}\n\n` +
+      `ログインID: ${email}\n` +
+      `パスワード: ご自身で設定したもの\n\n` +
+      `※パスワードを忘れた場合はログイン画面の「パスワードを忘れた方」から再設定してください。`;
+    try {
+      await navigator.clipboard.writeText(msg);
+      alert(`配布用テキストをコピーしました。\n\n${msg}`);
+    } catch {
+      prompt('配布用テキスト(コピーしてください)', msg);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1.5">
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={save}
+        placeholder="未設定"
+        className="w-36 p-1 border-1.5 border-ink bg-paper text-xs font-mono"
+      />
+      <button
+        onClick={copyMessage}
+        disabled={!email}
+        className="text-[10px] px-2 py-1 border-1.5 border-ink font-bold disabled:text-stone-300"
+      >
+        文面
       </button>
     </div>
   );
