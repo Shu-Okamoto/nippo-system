@@ -64,6 +64,7 @@ type MatrixCell = {
   start: string | null;
   end: string | null;
   break: number;
+  breaks: BreakSpan[];
   work: number;
 };
 
@@ -1645,9 +1646,19 @@ function StoreMonthView({
                           <span className="text-muted">〜</span>
                           {c.end ?? <span className="text-accent font-bold">未</span>}
                         </div>
-                        <div className="text-[10px] text-muted">
-                          {c.break > 0 ? `休${c.break}` : '休なし'}
-                        </div>
+                        {c.breaks && c.breaks.length > 0 ? (
+                          c.breaks.map((b, bi) => (
+                            <div key={bi} className="text-[10px] text-muted">
+                              休 {b.begin}〜
+                              {b.end ?? <span className="text-accent font-bold">中</span>}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-[10px] text-stone-300">休なし</div>
+                        )}
+                        {c.break > 0 && (
+                          <div className="text-[10px] text-muted">計{c.break}分</div>
+                        )}
                         <div className="text-xs font-bold">{formatMinutesAsHours(c.work)}h</div>
                       </td>
                     );
