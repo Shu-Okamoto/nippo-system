@@ -60,6 +60,22 @@ type MonthDay = {
   event_count: number;
 };
 
+type MatrixMember = {
+  staff_id: number;
+  name: string;
+  cells: number[];
+  total_minutes: number;
+  avg_ninjibai: number | null;
+};
+
+type MatrixData = {
+  days: string[];
+  members: MatrixMember[];
+  day_totals: number[];
+  grand_total_minutes: number;
+  store_ninjibai: number | null;
+};
+
 type MonthData = {
   staff_id: number;
   staff_name: string;
@@ -96,7 +112,7 @@ function shiftDate(date: string, days: number): string {
 }
 
 export function AttendanceAdmin() {
-  const [view, setView] = useState<'day' | 'month'>('day');
+  const [view, setView] = useState<'day' | 'month' | 'store'>('day');
   const [stores, setStores] = useState<Store[]>([]);
   const [storeId, setStoreId] = useState<number | null>(null);
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -113,6 +129,10 @@ export function AttendanceAdmin() {
   const [monthStaffId, setMonthStaffId] = useState<number | null>(null);
   const [monthData, setMonthData] = useState<MonthData | null>(null);
   const [monthLoading, setMonthLoading] = useState(false);
+
+  // 月別(店舗)ビュー。日付を行、メンバーを列に並べる
+  const [matrix, setMatrix] = useState<MatrixData | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
 
   // 月別から日別へ移った時に、その人だけを表示するための絞り込み
   const [focusStaffId, setFocusStaffId] = useState<number | null>(null);
@@ -278,6 +298,32 @@ export function AttendanceAdmin() {
   useEffect(() => {
     if (view === 'month') loadMonth();
   }, [view, loadMonth]);
+
+  const loadMatrix = useCallback(async () => {
+    if (!slug) {
+      setMatrix(null);
+      return;
+    }
+    setMatrixLoading(true);
+    const [y, m] = month.split('-').map(Number);
+    const { data, error: e } = await supabase.rpc('get_attendance_month_matrix', {
+      p_slug: slug,
+      p_from: `${month}-01`,
+      p_to: new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10),
+    });
+    if (e) {
+      setError(e.message);
+      setMatrix(null);
+    } else {
+      setError(null);
+      setMatrix(data as MatrixData);
+    }
+    setMatrixLoading(false);
+  }, [slug, month]);
+
+  useEffect(() => {
+    if (view === 'store') loadMatrix();
+  }, [view, loadMatrix]);
 
   const goToDate = (next: string) => {
     if (!next) return;
@@ -743,6 +789,7 @@ export function AttendanceAdmin() {
       <div className="flex border-2 border-ink mb-4 w-fit">
         {([
           { k: 'day' as const, label: '日別(店舗)' },
+          { k: 'store' as const, label: '月別(店舗)' },
           { k: 'month' as const, label: '月別(メンバー)' },
         ]).map((v) => (
           <button
@@ -777,7 +824,35 @@ export function AttendanceAdmin() {
             </button>
           ))}
         </div>
-        {view === 'day' ? (
+        {view === 'store' ? (
+          <>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="border-2 border-ink p-2 font-mono"
+            />
+            <button onClick={loadMatrix} className="px-3 py-2 border-2 border-ink font-bold text-sm">
+              ↻ 更新
+            </button>
+            <button
+              onClick={exportCsv}
+              disabled={exporting}
+              className="px-4 py-2 bg-ink text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+            >
+              {exporting ? '出力中…' : '📄 CSV出力'}
+            </button>
+            {sync?.connected && (
+              <button
+                onClick={syncWorkRecords}
+                disabled={wrSyncing}
+                className="px-4 py-2 bg-accent text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+              >
+                {wrSyncing ? '送信中…' : '↗ この月をfreeeへ(勤務実績)'}
+              </button>
+            )}
+          </>
+        ) : view === 'day' ? (
           <>
             <div className="flex items-center border-2 border-ink">
               <button
@@ -887,6 +962,10 @@ export function AttendanceAdmin() {
       )}
 
       {error && <div className="mb-3 text-sm text-accent font-bold">⚠ {error}</div>}
+
+      {view === 'store' && (
+        <StoreMonthView data={matrix} loading={matrixLoading} />
+      )}
 
       {view === 'month' && (
         <MonthView
@@ -1433,5 +1512,137 @@ function BreakSpans({ breaks }: { breaks: BreakSpan[] | null | undefined }) {
         </div>
       ))}
     </>
+  );
+}
+
+// 月別(店舗)。日付を行、メンバーを列に並べる。
+// 1か月=30行は縦スクロールで自然に読め、メンバーは横に収まる
+function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: boolean }) {
+  if (loading) return <div className="p-8 font-mincho">読み込み中…</div>;
+  if (!data || data.members.length === 0) {
+    return (
+      <div className="border-2 border-ink p-10 text-center font-mincho text-muted">
+        この月の打刻はありません
+      </div>
+    );
+  }
+
+  const { days, members, day_totals, grand_total_minutes, store_ninjibai } = data;
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-3 border-2 border-ink mb-4">
+        <MatrixCell label="出勤メンバー" value={`${members.length} 人`} hero />
+        <MatrixCell label="合計実働" value={`${formatMinutesAsHours(grand_total_minutes)} h`} />
+        <MatrixCell
+          label="人時売(打刻ベース)"
+          value={store_ninjibai !== null ? `${store_ninjibai.toLocaleString('ja-JP')} 円/h` : '—'}
+        />
+      </div>
+
+      <div className="border-2 border-ink bg-paper overflow-x-auto">
+        <table className="text-sm border-collapse">
+          <thead>
+            <tr className="bg-ink text-paper font-mincho">
+              <th className="p-2 border-r border-paper/30 sticky left-0 bg-ink z-10 w-24 text-left">
+                日付
+              </th>
+              {members.map((m) => (
+                <th key={m.staff_id} className="p-2 border-r border-paper/20 min-w-[64px]">
+                  {m.name}
+                </th>
+              ))}
+              <th className="p-2 bg-accent min-w-[64px]">日計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((d, i) => {
+              const wd = new Date(`${d}T00:00:00Z`).getUTCDay();
+              const weekend = wd === 0 || wd === 6;
+              return (
+                <tr
+                  key={d}
+                  className={`border-b border-dotted border-stone-300 ${weekend ? 'bg-paper2' : ''}`}
+                >
+                  <td
+                    className={`p-2 font-mono text-xs border-r border-ink sticky left-0 z-10 ${
+                      weekend ? 'bg-paper2' : 'bg-paper'
+                    }`}
+                  >
+                    {Number(d.slice(8, 10))}
+                    <span className="text-[10px] text-muted ml-1">({DAY_NAMES[wd]})</span>
+                  </td>
+                  {members.map((m) => {
+                    const min = m.cells[i] ?? 0;
+                    return (
+                      <td
+                        key={m.staff_id}
+                        className={`p-2 font-mono text-center ${min > 0 ? '' : 'text-stone-300'}`}
+                      >
+                        {min > 0 ? formatMinutesAsHours(min) : '·'}
+                      </td>
+                    );
+                  })}
+                  <td className="p-2 font-mono text-center font-bold border-l border-ink">
+                    {day_totals[i] > 0 ? formatMinutesAsHours(day_totals[i]) : '·'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="bg-gold border-t-2 border-ink font-mincho font-extrabold">
+              <td className="p-2 border-r border-ink sticky left-0 bg-gold z-10 text-xs">合計</td>
+              {members.map((m) => (
+                <td key={m.staff_id} className="p-2 font-mono text-center">
+                  {formatMinutesAsHours(m.total_minutes)}
+                </td>
+              ))}
+              <td className="p-2 font-mono text-center border-l border-ink">
+                {formatMinutesAsHours(grand_total_minutes)}
+              </td>
+            </tr>
+            <tr className="bg-paper2 border-t border-ink font-mincho font-bold">
+              <td className="p-2 border-r border-ink sticky left-0 bg-paper2 z-10 text-[11px]">
+                人時売平均
+              </td>
+              {members.map((m) => (
+                <td key={m.staff_id} className="p-2 font-mono text-center text-xs text-accent">
+                  {m.avg_ninjibai !== null ? m.avg_ninjibai.toLocaleString('ja-JP') : '—'}
+                </td>
+              ))}
+              <td className="p-2 font-mono text-center text-xs text-accent border-l border-ink">
+                {store_ninjibai !== null ? store_ninjibai.toLocaleString('ja-JP') : '—'}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        打刻から計算した実働時間です(15分丸め後)。
+        日報の「ワークスケジュール(実績)」とは別集計です。
+      </p>
+    </div>
+  );
+}
+
+function MatrixCell({ label, value, hero }: { label: string; value: string; hero?: boolean }) {
+  return (
+    <div
+      className={`p-4 border-r-2 border-ink last:border-r-0 ${
+        hero ? 'bg-ink text-paper' : 'bg-paper2'
+      }`}
+    >
+      <div
+        className={`font-mincho text-[11px] font-bold tracking-widest mb-2 ${
+          hero ? 'opacity-70' : 'text-muted'
+        }`}
+      >
+        {label}
+      </div>
+      <div className={`font-mono text-2xl font-extrabold leading-none ${hero ? 'text-gold' : ''}`}>
+        {value}
+      </div>
+    </div>
   );
 }
