@@ -60,11 +60,19 @@ type MonthDay = {
   event_count: number;
 };
 
+type MatrixCell = {
+  start: string | null;
+  end: string | null;
+  break: number;
+  work: number;
+};
+
 type MatrixMember = {
   staff_id: number;
   name: string;
-  cells: number[];
+  cells: MatrixCell[];
   total_minutes: number;
+  work_days: number;
   avg_ninjibai: number | null;
 };
 
@@ -133,6 +141,8 @@ export function AttendanceAdmin() {
   // 月別(店舗)ビュー。日付を行、メンバーを列に並べる
   const [matrix, setMatrix] = useState<MatrixData | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
+  // メンバーが少なければ出退勤も出せる。多いと横に収まらないので切替式
+  const [timecard, setTimecard] = useState(true);
 
   // 月別から日別へ移った時に、その人だけを表示するための絞り込み
   const [focusStaffId, setFocusStaffId] = useState<number | null>(null);
@@ -964,7 +974,12 @@ export function AttendanceAdmin() {
       {error && <div className="mb-3 text-sm text-accent font-bold">⚠ {error}</div>}
 
       {view === 'store' && (
-        <StoreMonthView data={matrix} loading={matrixLoading} />
+        <StoreMonthView
+          data={matrix}
+          loading={matrixLoading}
+          timecard={timecard}
+          onToggle={() => setTimecard((v) => !v)}
+        />
       )}
 
       {view === 'month' && (
@@ -1516,8 +1531,19 @@ function BreakSpans({ breaks }: { breaks: BreakSpan[] | null | undefined }) {
 }
 
 // 月別(店舗)。日付を行、メンバーを列に並べる。
-// 1か月=30行は縦スクロールで自然に読め、メンバーは横に収まる
-function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: boolean }) {
+// 1か月=30行は縦スクロールで自然に読め、メンバーは横に収まる。
+// timecard=true なら各セルに出退勤・休憩も出す(タイムカード表示)
+function StoreMonthView({
+  data,
+  loading,
+  timecard,
+  onToggle,
+}: {
+  data: MatrixData | null;
+  loading: boolean;
+  timecard: boolean;
+  onToggle: () => void;
+}) {
   if (loading) return <div className="p-8 font-mincho">読み込み中…</div>;
   if (!data || data.members.length === 0) {
     return (
@@ -1528,6 +1554,7 @@ function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: b
   }
 
   const { days, members, day_totals, grand_total_minutes, store_ninjibai } = data;
+  const colWidth = timecard ? 'min-w-[92px]' : 'min-w-[64px]';
 
   return (
     <div>
@@ -1540,6 +1567,28 @@ function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: b
         />
       </div>
 
+      <div className="mb-3 flex items-center gap-3 flex-wrap">
+        <div className="flex border-2 border-ink">
+          {[
+            { v: true, label: 'タイムカード' },
+            { v: false, label: '時間数のみ' },
+          ].map((o) => (
+            <button
+              key={String(o.v)}
+              onClick={() => timecard !== o.v && onToggle()}
+              className={`px-4 py-2 font-mincho font-bold text-sm border-r-2 border-ink last:border-r-0 ${
+                timecard === o.v ? 'bg-ink text-paper' : 'bg-paper'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted">
+          メンバーが多い月は「時間数のみ」の方が横に収まります
+        </span>
+      </div>
+
       <div className="border-2 border-ink bg-paper overflow-x-auto">
         <table className="text-sm border-collapse">
           <thead>
@@ -1548,7 +1597,7 @@ function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: b
                 日付
               </th>
               {members.map((m) => (
-                <th key={m.staff_id} className="p-2 border-r border-paper/20 min-w-[64px]">
+                <th key={m.staff_id} className={`p-2 border-r border-paper/20 ${colWidth}`}>
                   {m.name}
                 </th>
               ))}
@@ -1573,13 +1622,33 @@ function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: b
                     <span className="text-[10px] text-muted ml-1">({DAY_NAMES[wd]})</span>
                   </td>
                   {members.map((m) => {
-                    const min = m.cells[i] ?? 0;
+                    const c = m.cells[i];
+                    const worked = (c?.work ?? 0) > 0 || c?.start;
+                    if (!worked) {
+                      return (
+                        <td key={m.staff_id} className="p-2 text-center text-stone-300 font-mono">
+                          ·
+                        </td>
+                      );
+                    }
+                    if (!timecard) {
+                      return (
+                        <td key={m.staff_id} className="p-2 font-mono text-center">
+                          {formatMinutesAsHours(c.work)}
+                        </td>
+                      );
+                    }
                     return (
-                      <td
-                        key={m.staff_id}
-                        className={`p-2 font-mono text-center ${min > 0 ? '' : 'text-stone-300'}`}
-                      >
-                        {min > 0 ? formatMinutesAsHours(min) : '·'}
+                      <td key={m.staff_id} className="p-1.5 text-center font-mono leading-tight">
+                        <div className="text-[11px]">
+                          {c.start ?? '—'}
+                          <span className="text-muted">〜</span>
+                          {c.end ?? <span className="text-accent font-bold">未</span>}
+                        </div>
+                        <div className="text-[10px] text-muted">
+                          {c.break > 0 ? `休${c.break}` : '休なし'}
+                        </div>
+                        <div className="text-xs font-bold">{formatMinutesAsHours(c.work)}h</div>
                       </td>
                     );
                   })}
@@ -1596,6 +1665,9 @@ function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: b
               {members.map((m) => (
                 <td key={m.staff_id} className="p-2 font-mono text-center">
                   {formatMinutesAsHours(m.total_minutes)}
+                  <span className="block text-[10px] font-normal opacity-70">
+                    {m.work_days}日
+                  </span>
                 </td>
               ))}
               <td className="p-2 font-mono text-center border-l border-ink">
@@ -1619,7 +1691,7 @@ function StoreMonthView({ data, loading }: { data: MatrixData | null; loading: b
         </table>
       </div>
       <p className="mt-2 text-xs text-muted">
-        打刻から計算した実働時間です(15分丸め後)。
+        時刻は打刻そのまま、実働は15分丸め後です。
         日報の「ワークスケジュール(実績)」とは別集計です。
       </p>
     </div>
