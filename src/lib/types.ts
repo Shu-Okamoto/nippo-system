@@ -111,9 +111,10 @@ export type StaffPrivate = {
   hourly_wage: number | null;
   // 個人専用打刻URL のトークン。未発行なら null
   clock_token: string | null;
-  // freee 従業員マイページのログインID(メールアドレス)。
-  // パスワードは保持しない(本人が招待メールから設定する)
-  freee_login_email: string | null;
+  // freee 従業員マイページのログインID。
+  // satonoajimikawa-00000010 のような形式で、メールアドレスとは限らない。
+  // パスワードは保持しない(本人が設定する)
+  freee_login_id: string | null;
 };
 
 // 個人専用打刻URL(/clock/[token])で開く1人分の状態
