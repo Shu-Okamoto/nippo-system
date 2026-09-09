@@ -132,10 +132,10 @@ export function StaffMaster() {
                 <ClockLinkCell staffId={r.id} name={r.name} info={privateMap[r.id]} onSaved={load} />
               </td>
               <td className="p-2 text-center">
-                <LoginEmailCell
+                <LoginIdCell
                   staffId={r.id}
                   name={r.name}
-                  email={privateMap[r.id]?.freee_login_email ?? null}
+                  loginId={privateMap[r.id]?.freee_login_id ?? null}
                   onSaved={load}
                 />
               </td>
@@ -593,34 +593,35 @@ function MypageSetting() {
   );
 }
 
-// freee ログインID。LINE 配布用テキストもここから作る
-function LoginEmailCell({
+// freee ログインID。LINE 配布用テキストもここから作る。
+// 形式はメールアドレスとは限らない(satonoajimikawa-00000010 など)
+function LoginIdCell({
   staffId,
   name,
-  email,
+  loginId,
   onSaved,
 }: {
   staffId: number;
   name: string;
-  email: string | null;
+  loginId: string | null;
   onSaved: () => void;
 }) {
-  const [text, setText] = useState(email ?? '');
+  const [text, setText] = useState(loginId ?? '');
 
   useEffect(() => {
-    setText(email ?? '');
-  }, [staffId, email]);
+    setText(loginId ?? '');
+  }, [staffId, loginId]);
 
   const save = async () => {
     const trimmed = text.trim();
-    if (trimmed === (email ?? '')) return;
-    const { error } = await supabase.rpc('set_staff_login_email', {
+    if (trimmed === (loginId ?? '')) return;
+    const { error } = await supabase.rpc('set_staff_login_id', {
       p_staff_id: staffId,
-      p_email: trimmed || null,
+      p_login_id: trimmed || null,
     });
     if (error) {
       alert(`保存できませんでした: ${error.message}`);
-      setText(email ?? '');
+      setText(loginId ?? '');
       return;
     }
     onSaved();
@@ -634,14 +635,14 @@ function LoginEmailCell({
       alert('先に上の「freee マイページURL」を設定してください');
       return;
     }
-    if (!email) {
+    if (!loginId) {
       alert('先にこの人のログインIDを設定してください');
       return;
     }
     const msg =
       `${name} さんの給与明細はこちらから確認できます。\n\n` +
       `${url}\n\n` +
-      `ログインID: ${email}\n` +
+      `ログインID: ${loginId}\n` +
       `パスワード: ご自身で設定したもの\n\n` +
       `※パスワードを忘れた場合はログイン画面の「パスワードを忘れた方」から再設定してください。`;
     try {
@@ -660,11 +661,11 @@ function LoginEmailCell({
         onChange={(e) => setText(e.target.value)}
         onBlur={save}
         placeholder="未設定"
-        className="w-36 p-1 border-1.5 border-ink bg-paper text-xs font-mono"
+        className="w-40 p-1 border-1.5 border-ink bg-paper text-xs font-mono"
       />
       <button
         onClick={copyMessage}
-        disabled={!email}
+        disabled={!loginId}
         className="text-[10px] px-2 py-1 border-1.5 border-ink font-bold disabled:text-stone-300"
       >
         文面
