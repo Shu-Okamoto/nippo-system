@@ -185,7 +185,11 @@ export function StaffMaster() {
             className="p-2 border-2 border-ink bg-paper text-sm"
           >
             <option value="">所属店舗</option>
-            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {/* 既存スタッフの店舗名表示には停止中も要るので取得はそのまま。
+                新規登録の選択肢だけ稼働中に絞る */}
+            {stores.filter((s) => s.is_active).map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
           </select>
           <select
             value={newRow.role}
