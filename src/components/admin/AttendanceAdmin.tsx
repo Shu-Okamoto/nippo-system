@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatMinutesAsHours } from '@/lib/calc';
-import type { ClockEventType, Staff, Store } from '@/lib/types';
+import type { BreakSpan, ClockEventType, Staff, Store } from '@/lib/types';
 
 const EVENT_LABEL: Record<ClockEventType, string> = {
   clock_in: '出勤',
@@ -37,8 +37,6 @@ type EventRow = {
   freee_status: string;
   freee_error: string | null;
 };
-
-type BreakSpan = { begin: string; end: string | null };
 
 type SummaryRow = {
   staff_id: number;

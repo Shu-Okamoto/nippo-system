@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { ClockEventType, ClockState, PersonalClockBoard } from '@/lib/types';
+import { TodayPunches } from './TodayPunches';
 
 const EVENT_LABEL: Record<ClockEventType, string> = {
   clock_in: '出勤',
@@ -161,12 +162,17 @@ export function PersonalClock({ token }: { token: string }) {
           >
             {STATE_LABEL[board.last_event]}
           </span>
-          <span className="font-mono text-xs text-muted">
-            {board.clock_in_at ? `${board.clock_in_at}〜` : ''}
-            {board.clock_out_at ?? ''}
-            {board.break_minutes ? ` 休${board.break_minutes}分` : ''}
-          </span>
         </div>
+      </div>
+
+      {/* 当日の打刻内容。休憩の入り時刻をここで確認できる */}
+      <div className="px-5 pt-4">
+        <TodayPunches
+          clockInAt={board.clock_in_at}
+          clockOutAt={board.clock_out_at}
+          breakMinutes={board.break_minutes}
+          breaks={board.breaks}
+        />
       </div>
 
       {toast && (

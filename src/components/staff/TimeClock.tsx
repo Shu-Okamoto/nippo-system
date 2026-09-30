@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import type { ClockBoard, ClockEventType, ClockMember, ClockState } from '@/lib/types';
+import { TodayPunches, punchSummaryText } from './TodayPunches';
 
 const EVENT_LABEL: Record<ClockEventType, string> = {
   clock_in: '出勤',
@@ -215,9 +216,7 @@ export function TimeClock({ slug }: { slug: string }) {
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-xs text-muted">
-                    {m.clock_in_at ? `${m.clock_in_at}〜` : ''}
-                    {m.clock_out_at ?? ''}
-                    {m.break_minutes ? ` 休${m.break_minutes}分` : ''}
+                    {punchSummaryText(m)}
                   </span>
                   <span
                     className={`px-2 py-0.5 text-xs font-bold border-1.5 border-ink ${stateStyle(
@@ -293,6 +292,16 @@ function PinPad({
         </div>
 
         <div className="p-5">
+          {/* 当日の打刻内容。休憩の入り時刻をここで確認できる */}
+          <div className="mb-4">
+            <TodayPunches
+              clockInAt={member.clock_in_at}
+              clockOutAt={member.clock_out_at}
+              breakMinutes={member.break_minutes}
+              breaks={member.breaks}
+            />
+          </div>
+
           {requirePin && (
             <>
               <p className="text-sm font-mincho font-bold mb-3">PINを入力してください</p>

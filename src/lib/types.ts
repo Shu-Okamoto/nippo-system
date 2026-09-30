@@ -88,6 +88,12 @@ export type ClockEventType = 'clock_in' | 'break_begin' | 'break_end' | 'clock_o
 // 打刻画面で使う「そのメンバーの今の状態」。none = 未出勤
 export type ClockState = ClockEventType | 'none';
 
+// 休憩1回分の入り/戻り。戻り未打刻(休憩中)は end が null
+export type BreakSpan = {
+  begin: string;
+  end: string | null;
+};
+
 export type ClockMember = {
   staff_id: number;
   name: string;
@@ -100,6 +106,8 @@ export type ClockMember = {
   clock_in_at: string | null;
   clock_out_at: string | null;
   break_minutes: number | null;
+  // 当日の休憩の入り/戻り。本人が入り時刻を確認できるようにするため
+  breaks: BreakSpan[];
 };
 
 // スタッフマスタの非公開情報。PIN ハッシュは返らない
@@ -130,6 +138,7 @@ export type PersonalClockBoard = {
   clock_in_at: string | null;
   clock_out_at: string | null;
   break_minutes: number | null;
+  breaks: BreakSpan[];
 };
 
 export type ClockBoard = {
