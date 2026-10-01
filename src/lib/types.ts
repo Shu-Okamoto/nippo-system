@@ -30,6 +30,8 @@ export type Product = {
   category: string;
   sort_order: number;
   is_active: boolean;
+  // 日報から追加した店舗。null は本部登録で、店舗側では停止できない
+  created_by_store_id: number | null;
 };
 
 export type DailyReport = {

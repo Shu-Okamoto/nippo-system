@@ -54,6 +54,8 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   const [store, setStore] = useState<Store | null>(null);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  // 自店が日報から追加した商品(停止中も含む)。停止/復帰できるのはこれだけ
+  const [ownProducts, setOwnProducts] = useState<Product[]>([]);
 
   const [report, setReport] = useState<ReportState>({
     sales_forecast: null,
@@ -114,7 +116,16 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
         .select('*')
         .eq('is_active', true)
         .order('sort_order');
-      setProducts(prodData || []);
+      // 自店が追加した商品。35_store_own_products.sql 未実行なら空のまま
+      const { data: ownData } = await supabase.rpc('get_store_products', { p_slug: slug });
+      const own = (ownData as Product[]) || [];
+      setOwnProducts(own);
+
+      // 停止中の自店商品も持っておく。過去の注文行の商品名を引くため。
+      // セレクトには is_active で絞ってから出す
+      const active = prodData || [];
+      const missing = own.filter((o) => !active.some((p) => p.id === o.id));
+      setProducts([...active, ...missing]);
 
       // 質問マスタ(有効分)を取得
       const { data: qData } = await supabase
@@ -312,17 +323,33 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
   // 注文: 臨時商品を追加(registerToMaster=true なら商品マスタにも登録)
   const addOrderManual = async (name: string, registerToMaster: boolean) => {
     if (registerToMaster) {
-      // 商品マスタに登録(RPC経由でRLSを貫通)
-      const { data: newProduct, error: e } = await supabase.rpc('add_product', {
+      // 商品マスタに登録(RPC経由でRLSを貫通)。
+      // add_store_product は追加した店舗を記録するので、後から自店で停止できる
+      let { data: newProduct, error: e } = await supabase.rpc('add_store_product', {
+        p_slug: slug,
         p_name: name,
         p_category: 'その他',
       });
+
+      // 35_store_own_products.sql 実行前は関数が無い。従来の登録に落とす
+      if (e && e.code === 'PGRST202') {
+        ({ data: newProduct, error: e } = await supabase.rpc('add_product', {
+          p_name: name,
+          p_category: 'その他',
+        }));
+      }
+
       if (e) {
         setError(e.message);
         return;
       }
       const np = newProduct as Product;
-      setProducts((prev) => [...prev, np]);
+      setProducts((prev) => (prev.some((p) => p.id === np.id) ? prev : [...prev, np]));
+      if (np.created_by_store_id !== null && np.created_by_store_id !== undefined) {
+        setOwnProducts((prev) =>
+          prev.some((p) => p.id === np.id) ? prev.map((p) => (p.id === np.id ? np : p)) : [...prev, np]
+        );
+      }
       setOrders((prev) => [
         ...prev,
         { rowId: nextLocalId(), product_id: np.id, item_name_manual: null, planned_qty: 1 },
@@ -335,6 +362,28 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
       ]);
     }
     markDirty();
+  };
+
+  // 注文: 自店が追加した商品の停止/復帰。本部の商品は RPC 側で弾かれる
+  const toggleOwnProduct = async (productId: number, nextActive: boolean) => {
+    const { data, error: e } = await supabase.rpc('set_store_product_active', {
+      p_slug: slug,
+      p_product_id: productId,
+      p_active: nextActive,
+    });
+    if (e) {
+      setError(e.message);
+      return;
+    }
+    const np = data as Product;
+    setOwnProducts((prev) => prev.map((p) => (p.id === np.id ? np : p)));
+    // 停止しても products には残す。注文行の商品名を引くのに必要で、
+    // セレクトからは is_active で外れる
+    setProducts((prev) =>
+      prev.some((p) => p.id === np.id)
+        ? prev.map((p) => (p.id === np.id ? np : p))
+        : [...prev, np]
+    );
   };
 
   // 注文: 数量変更
@@ -652,8 +701,10 @@ export default function TodayPage({ params }: { params: { slug: string } }) {
             usedProductIds={orders
               .map((o) => o.product_id)
               .filter((x): x is number => x !== null)}
+            ownProducts={ownProducts}
             onAddFromMaster={addOrderFromMaster}
             onAddManual={addOrderManual}
+            onToggleOwnProduct={toggleOwnProduct}
           />
         </div>
       </Section>
