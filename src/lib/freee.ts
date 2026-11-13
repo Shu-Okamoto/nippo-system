@@ -341,6 +341,19 @@ export function serviceClient(): SupabaseClient<any, any, any, any, any> {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
     db: { schema: 'nippo' },
+    global: {
+      // Next.js は fetch の GET を Data Cache に載せる。Supabase の読み出しは
+      // GET なので、何もしないとトークンの読み出しが古い値に固定される。
+      //
+      // しかも select の文字列ごとに別のキャッシュキーになるため、
+      // 同じリクエスト内でも読んだ値が食い違う。実際にこれで
+      // 使い捨てのリフレッシュトークンを使い回し、freee が発行済みの
+      // 期限切れトークンを返す状態になっていた(2026-11-09〜)。
+      //
+      // トークンは「直前に書いた値」を必ず読めないといけないので、
+      // この経路のリクエストはキャッシュさせない。
+      fetch: (input: any, init?: any) => fetch(input, { ...(init ?? {}), cache: 'no-store' }),
+    },
   });
 }
 
@@ -361,6 +374,11 @@ export type RefreshInfo = {
   expires_in: number | null;
   token_type: string | null;
   scope: string | null;
+  // freee が返すトークンの発行時刻(UNIX秒)。使い捨てのリフレッシュトークンを
+  // 使い回すと、freee は発行済み(＝期限切れ)のトークンを返す。
+  // ここが古ければそれが起きている
+  created_at: number | null;
+  created_at_iso: string | null;
   response_keys: string[];
   new_token_fp: string | null;
   stored_token_fp_before: string | null;
@@ -421,6 +439,9 @@ async function refreshToken(
     expires_in: typeof json.expires_in === 'number' ? json.expires_in : null,
     token_type: json.token_type ?? null,
     scope: json.scope ?? null,
+    created_at: typeof json.created_at === 'number' ? json.created_at : null,
+    created_at_iso:
+      typeof json.created_at === 'number' ? new Date(json.created_at * 1000).toISOString() : null,
     response_keys: Object.keys(json),
     new_token_fp: tokenFingerprint(json.access_token),
     stored_token_fp_before: tokenFingerprint(storedAccessToken),

@@ -89,8 +89,19 @@ export async function GET(req: NextRequest) {
   // 401 なら、保存トークンが期限内と判定されて古いまま使われた可能性がある。
   // ここで1度だけ強制更新して、原因を「トークンの持ち回り」と
   // 「認可そのもの」に切り分ける
+  // 更新直後のトークンで既に 401 なら、もう一度更新しても意味がない。
+  // リフレッシュトークンは使い捨てなので、無駄なローテーションは避ける
   let tokenRetry: unknown = null;
-  if (!hrMe.ok && hrMe.status === 401) {
+  if (!hrMe.ok && hrMe.status === 401 && initial?.source === 'refreshed') {
+    tokenRetry = {
+      forced_refresh: 'skipped',
+      reason:
+        '最初から更新したトークンを送っており、それで401でした。' +
+        'リフレッシュトークンは使い捨てなので再更新はしません。',
+      refresh: initial.refresh,
+      sent_token_fp: initial.sent_token_fp,
+    };
+  } else if (!hrMe.ok && hrMe.status === 401) {
     const before = await tokenStatus(sb);
     try {
       const forced = await getAccessTokenDetailed(sb, true);
