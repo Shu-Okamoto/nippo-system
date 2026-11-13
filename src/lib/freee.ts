@@ -145,6 +145,27 @@ export async function getHrMe(
 }
 
 /**
+ * 人事労務ではない、共通の users/me を叩く。
+ *
+ * 人事労務APIが 401 のときの切り分け用。
+ * ここが 200 なら「トークンは有効だが、認可したアカウントが人事労務に
+ * アクセスできない」と確定する(人事労務側の権限・従業員登録の問題)。
+ * ここも 401 ならトークン自体が無効。
+ */
+export async function getGeneralMe(
+  accessToken: string
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const res = await fetch(`${API_BASE}/api/1/users/me`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
+}
+
+/**
  * 指定した事業所にこのトークンでアクセスできるかを確かめる。
  *
  * freee のアクセストークンは認可時に選んだ事業所に紐づく。

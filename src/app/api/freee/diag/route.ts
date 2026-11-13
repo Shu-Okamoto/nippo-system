@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getAccessToken,
   getAvailableTypes,
+  getGeneralMe,
   getHrMe,
   getWorkRecord,
   grantedScope,
@@ -114,8 +115,20 @@ export async function GET(req: NextRequest) {
   }
 
   if (!hrMe.ok) {
+    // 人事労務だけが落ちているのか、トークン自体が死んでいるのかを分ける。
+    // 共通APIが通るなら、認可したアカウントの人事労務権限の問題
+    const general = await getGeneralMe(accessToken);
     return NextResponse.json({
       // 結論を先に置く。下の hint は一般論なので読み違えやすい
+      verdict: general.ok
+        ? 'トークンは有効です(共通APIは200)。人事労務APIだけが 401 なので、' +
+          '認可した freee アカウントが人事労務にアクセスできない状態です。' +
+          'そのアカウントが事業所の従業員として在籍しているか、人事労務の' +
+          '管理者権限が付いているかを freee 側で確認してください。' +
+          '権限を直さずに再認可しても同じ結果になります。'
+        : 'トークン自体が無効です(共通APIも' + general.status + ')。' +
+          'freee の認可をやり直してください。',
+      general_api: { ok: general.ok, status: general.status, response: general.body },
       ...(tokenRetry ? { token_retry: tokenRetry } : {}),
       token: await tokenStatus(sb),
       hr_access: {
