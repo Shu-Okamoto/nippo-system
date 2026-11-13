@@ -178,6 +178,10 @@ export function AttendanceAdmin() {
   const [diagLoading, setDiagLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [wrSyncing, setWrSyncing] = useState(false);
+  // 勤務実績の送信期間。空なら月全体。
+  // freee 側で手修正した日を上書きしたくないときに絞る
+  const [wrFrom, setWrFrom] = useState('');
+  const [wrTo, setWrTo] = useState('');
   // エラー全文の表示用。alert だと本文をコピーできず、原因の共有ができない
   const [detail, setDetail] = useState<string | null>(null);
   const [authCode, setAuthCode] = useState('');
@@ -554,12 +558,27 @@ export function AttendanceAdmin() {
   const syncWorkRecords = async () => {
     if (!slug) return;
     const [y, m] = month.split('-').map(Number);
-    const from = `${month}-01`;
-    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    const monthFrom = `${month}-01`;
+    const monthTo = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+    // 指定があればその期間だけ。無ければ月全体
+    const from = wrFrom || monthFrom;
+    const to = wrTo || monthTo;
+
+    if (from > to) {
+      setDetail('期間の指定が逆になっています');
+      return;
+    }
+    if (from < monthFrom || to > monthTo) {
+      setDetail(`期間は ${month} の中で指定してください（${monthFrom} 〜 ${monthTo}）`);
+      return;
+    }
+
+    const label = wrFrom || wrTo ? `${from} 〜 ${to}` : month;
 
     if (
       !confirm(
-        `${month} の勤怠を freee の勤務実績として送信します。\n` +
+        `${label} の勤怠を freee の勤務実績として送信します。\n` +
           'freee 側の同じ日の勤務実績は上書きされます。よろしいですか?'
       )
     ) {
@@ -585,7 +604,7 @@ export function AttendanceAdmin() {
         setDetail(`勤務実績の送信に失敗しました\n\n${j.error}`);
       } else {
         const parts = [
-          `${month} の勤務実績を送信しました`,
+          `${from} 〜 ${to} の勤務実績を送信しました`,
           '',
           `送信 ${j.sent} 件 / 対象外 ${j.skipped} 件 / 失敗 ${j.failed} 件` +
             (j.truncated ? `\n(全 ${j.total} 件のうち先頭 100 件のみ。再実行で続きを送れます)` : ''),
@@ -902,13 +921,15 @@ export function AttendanceAdmin() {
               {exporting ? '出力中…' : '📄 CSV出力'}
             </button>
             {sync?.connected && (
-              <button
-                onClick={syncWorkRecords}
-                disabled={wrSyncing}
-                className="px-4 py-2 bg-accent text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
-              >
-                {wrSyncing ? '送信中…' : '↗ この月をfreeeへ(勤務実績)'}
-              </button>
+              <WorkRecordRange
+                month={month}
+                from={wrFrom}
+                to={wrTo}
+                setFrom={setWrFrom}
+                setTo={setWrTo}
+                busy={wrSyncing}
+                onSend={syncWorkRecords}
+              />
             )}
           </>
         ) : view === 'day' ? (
@@ -987,13 +1008,15 @@ export function AttendanceAdmin() {
               {exporting ? '出力中…' : '📄 CSV出力(全員)'}
             </button>
             {sync?.connected && (
-              <button
-                onClick={syncWorkRecords}
-                disabled={wrSyncing}
-                className="px-4 py-2 bg-accent text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
-              >
-                {wrSyncing ? '送信中…' : '↗ この月をfreeeへ(勤務実績)'}
-              </button>
+              <WorkRecordRange
+                month={month}
+                from={wrFrom}
+                to={wrTo}
+                setFrom={setWrFrom}
+                setTo={setWrTo}
+                busy={wrSyncing}
+                onSend={syncWorkRecords}
+              />
             )}
           </>
         )}
@@ -1565,6 +1588,84 @@ function SummaryCell({ label, value, hero }: { label: string; value: string; her
 
 // 休憩の入り〜戻り。1日に複数回あり得るので全て並べる。
 // 戻り打刻が無い場合は「休憩中」と出す
+/**
+ * 勤務実績の送信範囲。既定は月全体。
+ * freee 側で手修正した日を上書きしたくない場合に日付で絞る
+ */
+function WorkRecordRange({
+  month,
+  from,
+  to,
+  setFrom,
+  setTo,
+  busy,
+  onSend,
+}: {
+  month: string;
+  from: string;
+  to: string;
+  setFrom: (v: string) => void;
+  setTo: (v: string) => void;
+  busy: boolean;
+  onSend: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ranged = Boolean(from || to);
+
+  return (
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <button
+        onClick={onSend}
+        disabled={busy}
+        className="px-4 py-2 bg-accent text-paper border-2 border-ink font-mincho font-bold text-sm disabled:bg-stone-400"
+      >
+        {busy
+          ? '送信中…'
+          : ranged
+          ? `↗ ${from || '月初'}〜${to || '月末'} をfreeeへ(勤務実績)`
+          : '↗ この月をfreeeへ(勤務実績)'}
+      </button>
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-2.5 py-2 border-2 border-ink font-mono text-xs"
+        title="送信する期間を絞る"
+      >
+        {open ? '▲' : '期間 ▼'}
+      </button>
+      {open && (
+        <span className="inline-flex items-center gap-1.5">
+          <input
+            type="date"
+            value={from}
+            min={`${month}-01`}
+            onChange={(e) => setFrom(e.target.value)}
+            className="p-1.5 border-2 border-ink bg-paper text-xs font-mono"
+          />
+          <span className="text-xs">〜</span>
+          <input
+            type="date"
+            value={to}
+            min={`${month}-01`}
+            onChange={(e) => setTo(e.target.value)}
+            className="p-1.5 border-2 border-ink bg-paper text-xs font-mono"
+          />
+          {ranged && (
+            <button
+              onClick={() => {
+                setFrom('');
+                setTo('');
+              }}
+              className="px-2 py-1.5 border-2 border-ink font-mono text-xs"
+            >
+              月全体に戻す
+            </button>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function BreakSpans({ breaks }: { breaks: BreakSpan[] | null | undefined }) {
   if (!breaks || breaks.length === 0) return <span className="text-stone-400">·</span>;
   return (
