@@ -64,14 +64,60 @@ export async function GET(req: NextRequest) {
   try {
     accessToken = await getAccessToken(sb);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 502 });
+    return NextResponse.json(
+      {
+        error: e.message,
+        token: await tokenStatus(sb),
+        problem:
+          'アクセストークンを用意できませんでした。リフレッシュトークンが' +
+          '無効になっている場合、再認可(認可コードの取り直し)が必要です。',
+      },
+      { status: 502 }
+    );
   }
 
   // 最初に人事労務APIそのものに到達できるかを見る。
   // ここが 403 ならアプリに人事労務の権限が付いていない
-  const hrMe = await getHrMe(accessToken);
+  let hrMe = await getHrMe(accessToken);
+
+  // 401 なら、保存トークンが期限内と判定されて古いまま使われた可能性がある。
+  // ここで1度だけ強制更新して、原因を「トークンの持ち回り」と
+  // 「認可そのもの」に切り分ける
+  let tokenRetry: unknown = null;
+  if (!hrMe.ok && hrMe.status === 401) {
+    const before = await tokenStatus(sb);
+    try {
+      accessToken = await getAccessToken(sb, true);
+      const after = await getHrMe(accessToken);
+      tokenRetry = {
+        forced_refresh: 'ok',
+        expires_at_before: before?.expires_at ?? null,
+        hr_access_after: { ok: after.ok, status: after.status, response: after.body },
+        conclusion: after.ok
+          ? '保存していたアクセストークンが古いまま使われていました。' +
+            '強制更新で復旧しました。再認可は不要です。'
+          : '更新したトークンでも人事労務APIが通りません。freee 側で認可が' +
+            '解除されたか、アプリの権限が外れた可能性があります。再認可してください。',
+      };
+      hrMe = after;
+    } catch (e: any) {
+      // 更新そのものが失敗 = リフレッシュトークンが無効。再認可しかない
+      tokenRetry = {
+        forced_refresh: 'failed',
+        error: String(e?.message ?? e),
+        expires_at_before: before?.expires_at ?? null,
+        conclusion:
+          'リフレッシュトークンが無効になっています。更新の連鎖が切れた状態で、' +
+          'コードでは復旧できません。freee の認可をやり直してください。',
+      };
+    }
+  }
+
   if (!hrMe.ok) {
     return NextResponse.json({
+      // 結論を先に置く。下の hint は一般論なので読み違えやすい
+      ...(tokenRetry ? { token_retry: tokenRetry } : {}),
+      token: await tokenStatus(sb),
       hr_access: {
         ok: false,
         status: hrMe.status,
@@ -82,6 +128,7 @@ export async function GET(req: NextRequest) {
           'スコープの指定が必要な場合は FREEE_SCOPE を設定して接続し直します。',
       },
       scope_sent: process.env.FREEE_SCOPE ?? '(未設定)',
+      scope_granted: (await grantedScope(sb)) ?? '(不明。接続し直すと記録されます)',
       company_id: process.env.FREEE_COMPANY_ID,
     });
   }
