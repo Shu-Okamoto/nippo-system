@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await pushWorkRecords(sb, accessToken, body.slug, body.from, body.to);
+    const result = await pushWorkRecords(sb, accessToken, body.slug, body.from, body.to, () =>
+      getAccessToken(sb, true)
+    );
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

@@ -3,7 +3,7 @@
 // どちらからも使う。処理を1か所にまとめて、丸めの扱いがずれないようにする。
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { putWorkRecord } from '@/lib/freee';
+import { isUnauthorizedError, putWorkRecord } from '@/lib/freee';
 
 export type WorkRecordResult = {
   sent: number;
@@ -25,13 +25,18 @@ const LIMIT = 100;
  * 送るのは丸め後の値。勤務実績は1日の労働時間そのものなので、
  * 月別ビューに出している実働と一致していないと給与計算が合わない。
  * (打刻 time_clocks 側は実打刻をそのまま送る)
+ *
+ * refresh を渡すと、401 を受けたときに1度だけトークンを取り直して
+ * やり直す。保存済みトークンが期限内でも freee 側で無効になっている
+ * ことがあり、そのまま全件失敗するのを防ぐ。
  */
 export async function pushWorkRecords(
   sb: SupabaseClient<any, any, any, any, any>,
   accessToken: string,
   slug: string,
   from: string,
-  to: string
+  to: string,
+  refresh?: () => Promise<string>
 ): Promise<WorkRecordResult> {
   const { data, error } = await sb.rpc('get_attendance_export', {
     p_slug: slug,
@@ -46,6 +51,10 @@ export async function pushWorkRecords(
   let failed = 0;
   const errors: string[] = [];
   const skippedDetails: string[] = [];
+
+  // トークンの取り直しは1回だけ。無効なまま繰り返しても意味がない
+  let token = accessToken;
+  let refreshed = false;
 
   for (const r of rows.slice(0, LIMIT)) {
     const start = r.rounded_start_time;
@@ -73,15 +82,31 @@ export async function pushWorkRecords(
       Array.isArray(r.breaks) && r.breaks.length > 0 ? r.breaks[0]?.begin ?? null : null;
 
     try {
-      await putWorkRecord(
-        accessToken,
-        String(r.freee_employee_id),
-        r.date,
-        start,
-        end,
-        r.rounded_break_minutes ?? 0,
-        firstBreak
-      );
+      try {
+        await putWorkRecord(
+          token,
+          String(r.freee_employee_id),
+          r.date,
+          start,
+          end,
+          r.rounded_break_minutes ?? 0,
+          firstBreak
+        );
+      } catch (err) {
+        // 期限内のはずのトークンが無効なことがある。1度だけ取り直す
+        if (!refresh || refreshed || !isUnauthorizedError(err)) throw err;
+        refreshed = true;
+        token = await refresh();
+        await putWorkRecord(
+          token,
+          String(r.freee_employee_id),
+          r.date,
+          start,
+          end,
+          r.rounded_break_minutes ?? 0,
+          firstBreak
+        );
+      }
       sent++;
     } catch (err: any) {
       failed++;

@@ -91,7 +91,9 @@ export async function POST(req: NextRequest) {
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
   try {
-    const result = await pushPendingPunches(sb, accessToken, today);
+    const result = await pushPendingPunches(sb, accessToken, today, () =>
+      getAccessToken(sb, true)
+    );
     return NextResponse.json({ configured: true, ...result });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

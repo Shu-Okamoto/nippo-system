@@ -64,9 +64,10 @@ export async function GET(req: NextRequest) {
 
   // (1) 当日の打刻を送る。実打刻の記録を freee に残すため。
   //     店舗横断で未送信をまとめて処理する
+  const refresh = () => getAccessToken(sb, true);
   let punches: unknown;
   try {
-    punches = await pushPendingPunches(sb, accessToken, today);
+    punches = await pushPendingPunches(sb, accessToken, today, refresh);
   } catch (err: any) {
     punches = { error: String(err?.message ?? err).slice(0, 500) };
   }
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest) {
   const workRecords: Record<string, unknown> = {};
   for (const slug of ((slugs ?? []) as string[])) {
     try {
-      workRecords[slug] = await pushWorkRecords(sb, accessToken, slug, today, today);
+      workRecords[slug] = await pushWorkRecords(sb, accessToken, slug, today, today, refresh);
     } catch (err: any) {
       workRecords[slug] = { error: String(err?.message ?? err).slice(0, 500) };
     }

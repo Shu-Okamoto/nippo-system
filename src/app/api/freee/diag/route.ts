@@ -18,6 +18,7 @@ import {
   isFreeeConfigured,
   probeCompany,
   serviceClient,
+  tokenStatus,
   toJstDateTime,
 } from '@/lib/freee';
 
@@ -242,6 +243,9 @@ export async function GET(req: NextRequest) {
             'FREEE_SCOPE に設定して再デプロイのうえ、認可し直してください。',
         }
       : {}),
+    // 保存トークンの期限。期限内のはずなのに 401 が続く場合、
+    // ここが実態とずれている(freee側で無効化された)可能性がある
+    token: await tokenStatus(sb),
     self_employee_id: selfEmployeeId,
     self_check: selfCheck,
     work_record_check: workRecordCheck,

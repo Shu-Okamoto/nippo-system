@@ -106,6 +106,27 @@ export async function isConnected(
 }
 
 /**
+ * 保存しているトークンの状態。値そのものは返さない。
+ * 期限内のはずなのに 401 になる場合、ここが実態とずれていることがある。
+ */
+export async function tokenStatus(
+  sb: SupabaseClient<any, any, any, any, any>
+): Promise<{ expires_at: string | null; expires_in_hours: number | null } | null> {
+  const { data } = await sb
+    .from('freee_tokens')
+    .select('expires_at')
+    .eq('id', 1)
+    .maybeSingle();
+  const row = data as { expires_at: string } | null;
+  if (!row) return null;
+  return {
+    expires_at: row.expires_at,
+    expires_in_hours:
+      Math.round(((new Date(row.expires_at).getTime() - Date.now()) / 3600000) * 10) / 10,
+  };
+}
+
+/**
  * 人事労務APIに到達できるかを確認する。
  * ここが通らなければ、従業員一覧も打刻も通らない。
  * アプリに人事労務の権限が付いていない場合はここで 403 になる。
@@ -351,9 +372,14 @@ async function refreshToken(sb: SupabaseClient<any, any, any, any, any>, refresh
 /**
  * 有効なアクセストークンを返す。期限が近ければ更新して保存する。
  * DBに未登録なら FREEE_INITIAL_REFRESH_TOKEN で初期化する。
+ *
+ * force=true なら期限に関係なく更新する。保存済みトークンが期限内でも
+ * freee 側で無効になっている(認可し直し等)ことがあり、401 を受けた
+ * あとの取り直しに使う。
  */
 export async function getAccessToken(
-  sb: SupabaseClient<any, any, any, any, any>
+  sb: SupabaseClient<any, any, any, any, any>,
+  force = false
 ): Promise<string> {
   const { data, error } = await sb
     .from('freee_tokens')
@@ -376,10 +402,20 @@ export async function getAccessToken(
   }
 
   const expiresInSec = (new Date(row.expires_at).getTime() - Date.now()) / 1000;
-  if (expiresInSec > REFRESH_MARGIN_SEC) {
+  if (!force && expiresInSec > REFRESH_MARGIN_SEC) {
     return row.access_token;
   }
   return refreshToken(sb, row.refresh_token);
+}
+
+/**
+ * freee の応答が「このアクセストークンでは認証できない」かどうか。
+ * 期限内のはずのトークンが無効になっている場合に、取り直して
+ * 1度だけやり直す判定に使う。
+ */
+export function isUnauthorizedError(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err);
+  return msg.includes('invalid_access_token') || msg.includes('(401)');
 }
 
 /**

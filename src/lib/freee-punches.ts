@@ -3,7 +3,12 @@
 // どちらからも使う。
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { postTimeClock, toJstDateTime, type FreeeClockType } from '@/lib/freee';
+import {
+  isUnauthorizedError,
+  postTimeClock,
+  toJstDateTime,
+  type FreeeClockType,
+} from '@/lib/freee';
 
 export type PunchResult = {
   sent: number;
@@ -23,11 +28,16 @@ const BATCH_LIMIT = 50;
  * workDate を指定すると、その日の打刻だけを対象にする。
  * 自動送信では当日分に絞る。freee の打刻APIは過去日を受け付けないため、
  * 溜まった過去分まで送ろうとしても失敗が増えるだけになる。
+ *
+ * refresh を渡すと、401 を受けたときに1度だけトークンを取り直して
+ * やり直す。保存済みトークンが期限内でも freee 側で無効になっている
+ * ことがあり、そのまま全件失敗するのを防ぐ。
  */
 export async function pushPendingPunches(
   sb: SupabaseClient<any, any, any, any, any>,
   accessToken: string,
-  workDate?: string
+  workDate?: string,
+  refresh?: () => Promise<string>
 ): Promise<PunchResult> {
   let q = sb
     .from('time_clock_events')
@@ -50,6 +60,10 @@ export async function pushPendingPunches(
   let failed = 0;
   const errors: string[] = [];
 
+  // トークンの取り直しは1回だけ。無効なまま繰り返しても意味がない
+  let token = accessToken;
+  let refreshed = false;
+
   for (const ev of events as any[]) {
     const employeeId: string | null = ev.staff?.freee_employee_id ?? null;
 
@@ -71,13 +85,28 @@ export async function pushPendingPunches(
     const { baseDate, datetime } = toJstDateTime(ev.event_at);
 
     try {
-      await postTimeClock(
-        accessToken,
-        String(employeeId),
-        ev.event_type as FreeeClockType,
-        baseDate,
-        datetime
-      );
+      try {
+        await postTimeClock(
+          token,
+          String(employeeId),
+          ev.event_type as FreeeClockType,
+          baseDate,
+          datetime
+        );
+      } catch (err) {
+        // 期限内のはずのトークンが無効なことがある。1度だけ取り直す。
+        // それでも 401 なら認可そのものの問題なので、そのまま記録する
+        if (!refresh || refreshed || !isUnauthorizedError(err)) throw err;
+        refreshed = true;
+        token = await refresh();
+        await postTimeClock(
+          token,
+          String(employeeId),
+          ev.event_type as FreeeClockType,
+          baseDate,
+          datetime
+        );
+      }
       await sb
         .from('time_clock_events')
         .update({
