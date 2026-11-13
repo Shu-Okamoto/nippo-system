@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getAccessToken,
+  getAccessTokenDetailed,
   getAvailableTypes,
   getGeneralMe,
   getHrMe,
@@ -62,8 +63,12 @@ export async function GET(req: NextRequest) {
   }
 
   let accessToken: string;
+  // 最初にどのトークンを送ったのか(保存分か更新分か)を記録する。
+  // 「更新したのに古いトークンを送っていた」を見分けるため
+  let initial: Awaited<ReturnType<typeof getAccessTokenDetailed>> | null = null;
   try {
-    accessToken = await getAccessToken(sb);
+    initial = await getAccessTokenDetailed(sb);
+    accessToken = initial.accessToken;
   } catch (e: any) {
     return NextResponse.json(
       {
@@ -88,10 +93,15 @@ export async function GET(req: NextRequest) {
   if (!hrMe.ok && hrMe.status === 401) {
     const before = await tokenStatus(sb);
     try {
-      accessToken = await getAccessToken(sb, true);
+      const forced = await getAccessTokenDetailed(sb, true);
+      accessToken = forced.accessToken;
       const after = await getHrMe(accessToken);
       tokenRetry = {
         forced_refresh: 'ok',
+        // 更新の実態。トークンの値は持たせず、変わったかどうかだけ見る
+        refresh: forced.refresh,
+        source: forced.source,
+        sent_token_fp: forced.sent_token_fp,
         expires_at_before: before?.expires_at ?? null,
         hr_access_after: { ok: after.ok, status: after.status, response: after.body },
         conclusion: after.ok
@@ -129,6 +139,14 @@ export async function GET(req: NextRequest) {
         : 'トークン自体が無効です(共通APIも' + general.status + ')。' +
           'freee の認可をやり直してください。',
       general_api: { ok: general.ok, status: general.status, response: general.body },
+      initial_token: initial
+        ? {
+            source: initial.source,
+            sent_token_fp: initial.sent_token_fp,
+            stored_expires_at: initial.stored_expires_at,
+            refresh: initial.refresh,
+          }
+        : null,
       ...(tokenRetry ? { token_retry: tokenRetry } : {}),
       token: await tokenStatus(sb),
       hr_access: {

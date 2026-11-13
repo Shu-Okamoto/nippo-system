@@ -13,6 +13,7 @@
 // 未設定なら isFreeeConfigured() が false を返し、同期は何もしない。
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 
 const TOKEN_URL = 'https://accounts.secure.freee.co.jp/public_api/token';
 const API_BASE = 'https://api.freee.co.jp';
@@ -349,7 +350,37 @@ type TokenRow = {
   expires_at: string;
 };
 
-async function refreshToken(sb: SupabaseClient<any, any, any, any, any>, refresh: string) {
+/**
+ * トークン更新で実際に何が起きたかの記録。切り分け用。
+ * トークンの値そのものは持たせない。同一性の確認は指紋(sha256の先頭)で行う。
+ */
+export type RefreshInfo = {
+  http_status: number;
+  has_access_token: boolean;
+  has_refresh_token: boolean;
+  expires_in: number | null;
+  token_type: string | null;
+  scope: string | null;
+  response_keys: string[];
+  new_token_fp: string | null;
+  stored_token_fp_before: string | null;
+  token_changed: boolean | null;
+  expires_at_written: string | null;
+  saved: boolean;
+  save_error: string | null;
+};
+
+/** トークンの同一性だけを見るための指紋。値は復元できない */
+export function tokenFingerprint(token: string | null | undefined): string | null {
+  if (!token) return null;
+  return createHash('sha256').update(token).digest('hex').slice(0, 12);
+}
+
+async function refreshToken(
+  sb: SupabaseClient<any, any, any, any, any>,
+  refresh: string,
+  storedAccessToken?: string | null
+): Promise<{ accessToken: string; info: RefreshInfo }> {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     client_id: process.env.FREEE_CLIENT_ID!,
@@ -372,7 +403,32 @@ async function refreshToken(sb: SupabaseClient<any, any, any, any, any>, refresh
     );
   }
 
+  // 200 でも access_token が入っていないことがあり得る。
+  // そのまま保存すると「更新成功」と見えて古いトークンを使い続けるので弾く
+  if (!json.access_token) {
+    throw new Error(
+      `freee トークン更新の応答に access_token がありません (${res.status}): ` +
+        `応答の項目=${Object.keys(json).join(',') || '(なし)'}`
+    );
+  }
+
   const expiresAt = new Date(Date.now() + (json.expires_in ?? 21600) * 1000).toISOString();
+
+  const info: RefreshInfo = {
+    http_status: res.status,
+    has_access_token: Boolean(json.access_token),
+    has_refresh_token: Boolean(json.refresh_token),
+    expires_in: typeof json.expires_in === 'number' ? json.expires_in : null,
+    token_type: json.token_type ?? null,
+    scope: json.scope ?? null,
+    response_keys: Object.keys(json),
+    new_token_fp: tokenFingerprint(json.access_token),
+    stored_token_fp_before: tokenFingerprint(storedAccessToken),
+    token_changed: storedAccessToken ? json.access_token !== storedAccessToken : null,
+    expires_at_written: expiresAt,
+    saved: false,
+    save_error: null,
+  };
 
   // freee はリフレッシュトークンを毎回ローテーションするため必ず保存する。
   // ここで保存に失敗すると次回以降認証できなくなるのでエラーを伝播させる。
@@ -384,24 +440,30 @@ async function refreshToken(sb: SupabaseClient<any, any, any, any, any>, refresh
     scope: json.scope ?? null,
   });
   if (error) {
+    info.save_error = error.message;
     throw new Error(`freee トークンの保存に失敗しました: ${error.message}`);
   }
+  info.saved = true;
 
-  return json.access_token as string;
+  return { accessToken: json.access_token as string, info };
 }
 
 /**
- * 有効なアクセストークンを返す。期限が近ければ更新して保存する。
- * DBに未登録なら FREEE_INITIAL_REFRESH_TOKEN で初期化する。
+ * 有効なアクセストークンと、その入手経路を返す。
  *
- * force=true なら期限に関係なく更新する。保存済みトークンが期限内でも
- * freee 側で無効になっている(認可し直し等)ことがあり、401 を受けた
- * あとの取り直しに使う。
+ * 「更新したのに古いトークンを送っていた」のような食い違いを
+ * 追えるようにするため、更新の実態(RefreshInfo)も一緒に返す。
  */
-export async function getAccessToken(
+export async function getAccessTokenDetailed(
   sb: SupabaseClient<any, any, any, any, any>,
   force = false
-): Promise<string> {
+): Promise<{
+  accessToken: string;
+  source: 'stored' | 'refreshed' | 'seeded';
+  sent_token_fp: string | null;
+  stored_expires_at: string | null;
+  refresh: RefreshInfo | null;
+}> {
   const { data, error } = await sb
     .from('freee_tokens')
     .select('access_token, refresh_token, expires_at')
@@ -419,14 +481,51 @@ export async function getAccessToken(
         'freee トークンが未登録です。FREEE_INITIAL_REFRESH_TOKEN を設定して一度同期を実行してください'
       );
     }
-    return refreshToken(sb, seed);
+    const r = await refreshToken(sb, seed);
+    return {
+      accessToken: r.accessToken,
+      source: 'seeded',
+      sent_token_fp: tokenFingerprint(r.accessToken),
+      stored_expires_at: null,
+      refresh: r.info,
+    };
   }
 
   const expiresInSec = (new Date(row.expires_at).getTime() - Date.now()) / 1000;
   if (!force && expiresInSec > REFRESH_MARGIN_SEC) {
-    return row.access_token;
+    return {
+      accessToken: row.access_token,
+      source: 'stored',
+      sent_token_fp: tokenFingerprint(row.access_token),
+      stored_expires_at: row.expires_at,
+      refresh: null,
+    };
   }
-  return refreshToken(sb, row.refresh_token);
+
+  const r = await refreshToken(sb, row.refresh_token, row.access_token);
+  return {
+    accessToken: r.accessToken,
+    source: 'refreshed',
+    sent_token_fp: tokenFingerprint(r.accessToken),
+    stored_expires_at: row.expires_at,
+    refresh: r.info,
+  };
+}
+
+/**
+ * 有効なアクセストークンを返す。期限が近ければ更新して保存する。
+ * DBに未登録なら FREEE_INITIAL_REFRESH_TOKEN で初期化する。
+ *
+ * force=true なら期限に関係なく更新する。保存済みトークンが期限内でも
+ * freee 側で無効になっている(認可し直し等)ことがあり、401 を受けた
+ * あとの取り直しに使う。
+ */
+export async function getAccessToken(
+  sb: SupabaseClient<any, any, any, any, any>,
+  force = false
+): Promise<string> {
+  const r = await getAccessTokenDetailed(sb, force);
+  return r.accessToken;
 }
 
 /**
