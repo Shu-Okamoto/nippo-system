@@ -521,6 +521,9 @@ export async function getAccessTokenDetailed(
   sent_token_fp: string | null;
   stored_expires_at: string | null;
   refresh: RefreshInfo | null;
+  // ロックが使えなかった理由。null なら直列化が効いている。
+  // 黙って無効化されていると同時更新に気付けないので外に出す
+  lock_error: string | null;
 }> {
   const readRow = async (): Promise<TokenRow | null> => {
     const { data, error } = await sb
@@ -548,6 +551,7 @@ export async function getAccessTokenDetailed(
       sent_token_fp: tokenFingerprint(r.accessToken),
       stored_expires_at: null,
       refresh: r.info,
+      lock_error: null,
     };
   }
 
@@ -559,6 +563,7 @@ export async function getAccessTokenDetailed(
       sent_token_fp: tokenFingerprint(row.access_token),
       stored_expires_at: row.expires_at,
       refresh: null,
+      lock_error: null,
     };
   }
 
@@ -567,9 +572,12 @@ export async function getAccessTokenDetailed(
     p_seconds: REFRESH_LOCK_SEC,
   });
 
-  // 36_freee_lock_and_health.sql 未実行なら関数が無い。
-  // その場合は従来どおり直接更新する(直列化なし)
-  const lockAvailable = !lockError || (lockError as any).code !== 'PGRST202';
+  // ロックは稀な同時更新を防ぐための仕組みなので、これ自体が
+  // 更新を止める単一障害点になってはいけない。
+  // 関数が無い(36未実行)、権限がない、その他どんな理由でも
+  // 取得に失敗したら直列化なしで更新する。
+  // 同時更新は稀で復旧可能だが、全更新停止は即座に障害になる
+  const lockAvailable = !lockError;
 
   if (lockAvailable && got !== true) {
     // 負けた側。勝った側が新しいトークンを書くのを待つ
@@ -584,6 +592,7 @@ export async function getAccessTokenDetailed(
           sent_token_fp: tokenFingerprint(fresh.access_token),
           stored_expires_at: fresh.expires_at,
           refresh: null,
+          lock_error: null,
         };
       }
     }
@@ -604,6 +613,7 @@ export async function getAccessTokenDetailed(
         sent_token_fp: tokenFingerprint(latest.access_token),
         stored_expires_at: latest.expires_at,
         refresh: null,
+        lock_error: lockError ? lockError.message : null,
       };
     }
 
@@ -614,6 +624,7 @@ export async function getAccessTokenDetailed(
       sent_token_fp: tokenFingerprint(r.accessToken),
       stored_expires_at: latest.expires_at,
       refresh: r.info,
+      lock_error: lockError ? lockError.message : null,
     };
   } finally {
     if (lockAvailable) {

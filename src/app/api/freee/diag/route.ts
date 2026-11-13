@@ -163,6 +163,7 @@ export async function GET(req: NextRequest) {
             source: initial.source,
             sent_token_fp: initial.sent_token_fp,
             stored_expires_at: initial.stored_expires_at,
+            lock_error: initial.lock_error,
             refresh: initial.refresh,
           }
         : null,
