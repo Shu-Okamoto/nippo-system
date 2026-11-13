@@ -470,30 +470,69 @@ async function refreshToken(
 }
 
 /**
+ * 連携状態を記録する。失敗していれば勤怠管理に警告を出すために使う。
+ *
+ * 記録自体が失敗しても本処理は止めない。ここで例外を投げると
+ * 送信そのものが落ちてしまい、本末転倒になる。
+ */
+export async function recordHealth(
+  sb: SupabaseClient<any, any, any, any, any>,
+  ok: boolean,
+  context: string,
+  code?: string | null,
+  message?: string | null
+): Promise<void> {
+  try {
+    await sb.rpc('set_freee_health', {
+      p_ok: ok,
+      p_code: code ?? null,
+      p_message: message ?? null,
+      p_context: context,
+    });
+  } catch {
+    // 記録できなくても送信は続ける
+  }
+}
+
+// 更新リースの保持時間と、負けた側が待つ上限
+const REFRESH_LOCK_SEC = 30;
+const REFRESH_WAIT_MS = 15000;
+const REFRESH_POLL_MS = 1000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
  * 有効なアクセストークンと、その入手経路を返す。
  *
  * 「更新したのに古いトークンを送っていた」のような食い違いを
  * 追えるようにするため、更新の実態(RefreshInfo)も一緒に返す。
+ *
+ * 更新は必ずリースを取ってから行う。リフレッシュトークンは使い捨てで、
+ * 同時に2つ更新すると片方が取得した有効なトークンが捨てられ、以後
+ * どう更新しても通らなくなる。リースを取れなかった側は更新せず、
+ * 勝った側が書いた新しいトークンを待って使う。
  */
 export async function getAccessTokenDetailed(
   sb: SupabaseClient<any, any, any, any, any>,
   force = false
 ): Promise<{
   accessToken: string;
-  source: 'stored' | 'refreshed' | 'seeded';
+  source: 'stored' | 'refreshed' | 'seeded' | 'waited';
   sent_token_fp: string | null;
   stored_expires_at: string | null;
   refresh: RefreshInfo | null;
 }> {
-  const { data, error } = await sb
-    .from('freee_tokens')
-    .select('access_token, refresh_token, expires_at')
-    .eq('id', 1)
-    .maybeSingle();
+  const readRow = async (): Promise<TokenRow | null> => {
+    const { data, error } = await sb
+      .from('freee_tokens')
+      .select('access_token, refresh_token, expires_at')
+      .eq('id', 1)
+      .maybeSingle();
+    if (error) throw new Error(`freee トークンの読み込みに失敗しました: ${error.message}`);
+    return data as TokenRow | null;
+  };
 
-  if (error) throw new Error(`freee トークンの読み込みに失敗しました: ${error.message}`);
-
-  const row = data as TokenRow | null;
+  const row = await readRow();
 
   if (!row) {
     const seed = process.env.FREEE_INITIAL_REFRESH_TOKEN;
@@ -523,14 +562,69 @@ export async function getAccessTokenDetailed(
     };
   }
 
-  const r = await refreshToken(sb, row.refresh_token, row.access_token);
-  return {
-    accessToken: r.accessToken,
-    source: 'refreshed',
-    sent_token_fp: tokenFingerprint(r.accessToken),
-    stored_expires_at: row.expires_at,
-    refresh: r.info,
-  };
+  // 更新する権利を取りに行く
+  const { data: got, error: lockError } = await sb.rpc('freee_refresh_lock', {
+    p_seconds: REFRESH_LOCK_SEC,
+  });
+
+  // 36_freee_lock_and_health.sql 未実行なら関数が無い。
+  // その場合は従来どおり直接更新する(直列化なし)
+  const lockAvailable = !lockError || (lockError as any).code !== 'PGRST202';
+
+  if (lockAvailable && got !== true) {
+    // 負けた側。勝った側が新しいトークンを書くのを待つ
+    const deadline = Date.now() + REFRESH_WAIT_MS;
+    while (Date.now() < deadline) {
+      await sleep(REFRESH_POLL_MS);
+      const fresh = await readRow();
+      if (fresh && fresh.access_token !== row.access_token) {
+        return {
+          accessToken: fresh.access_token,
+          source: 'waited',
+          sent_token_fp: tokenFingerprint(fresh.access_token),
+          stored_expires_at: fresh.expires_at,
+          refresh: null,
+        };
+      }
+    }
+    throw new Error(
+      '別の処理が freee トークンを更新中です。少し待ってからもう一度実行してください'
+    );
+  }
+
+  try {
+    // リースを取ってから改めて読む。待っている間に
+    // 他が更新を終えていれば、それを使って更新を1回で済ませる
+    const latest = (await readRow()) ?? row;
+    const latestSec = (new Date(latest.expires_at).getTime() - Date.now()) / 1000;
+    if (!force && latestSec > REFRESH_MARGIN_SEC) {
+      return {
+        accessToken: latest.access_token,
+        source: 'stored',
+        sent_token_fp: tokenFingerprint(latest.access_token),
+        stored_expires_at: latest.expires_at,
+        refresh: null,
+      };
+    }
+
+    const r = await refreshToken(sb, latest.refresh_token, latest.access_token);
+    return {
+      accessToken: r.accessToken,
+      source: 'refreshed',
+      sent_token_fp: tokenFingerprint(r.accessToken),
+      stored_expires_at: latest.expires_at,
+      refresh: r.info,
+    };
+  } finally {
+    if (lockAvailable) {
+      // 解放に失敗しても期限で空くので、ここでは落とさない
+      try {
+        await sb.rpc('freee_refresh_unlock');
+      } catch {
+        /* noop */
+      }
+    }
+  }
 }
 
 /**

@@ -38,6 +38,16 @@ type EventRow = {
   freee_error: string | null;
 };
 
+// freee 連携の最後の結果。失敗していれば画面上部に警告を出す
+type FreeeHealth = {
+  checked_at: string;
+  ok: boolean;
+  code: string | null;
+  message: string | null;
+  context: string | null;
+  age_hours: number;
+};
+
 type SummaryRow = {
   staff_id: number;
   name: string;
@@ -157,6 +167,7 @@ export function AttendanceAdmin() {
   const [addTime, setAddTime] = useState('09:00');
 
   const [sync, setSync] = useState<SyncInfo | null>(null);
+  const [health, setHealth] = useState<FreeeHealth | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [employees, setEmployees] = useState<
@@ -258,6 +269,9 @@ export function AttendanceAdmin() {
     } catch {
       setSync(null);
     }
+    // 36_freee_lock_and_health.sql 未実行なら関数が無いので無視する
+    const { data: h } = await supabase.rpc('get_freee_health');
+    setHealth((h as FreeeHealth) ?? null);
   }, []);
 
   useEffect(() => {
@@ -760,6 +774,42 @@ export function AttendanceAdmin() {
 
   return (
     <div>
+      {/* 連携が切れたら気付けるようにする。2026-11-09 の障害は
+          5日間誰も気付かなかった */}
+      {health && !health.ok && (
+        <div className="mb-4 border-2 border-accent bg-red-50 p-4">
+          <b className="font-mincho text-base text-accent block mb-1">
+            ⚠ freee 連携が失敗しています
+          </b>
+          <p className="text-sm leading-relaxed">
+            最後の送信（{health.context ?? '—'}）が失敗しました。
+            <span className="font-mono text-xs ml-1">
+              {new Date(health.checked_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+              （{health.age_hours}時間前）
+            </span>
+            <br />
+            打刻データは保存されているので失われていません。原因を直したあと、
+            「{month} のエラーを再送対象に」で戻してから送り直してください。
+          </p>
+          <div className="mt-2 flex gap-2 flex-wrap">
+            <button
+              onClick={runDiag}
+              className="text-xs px-3 py-1.5 border-2 border-accent bg-paper font-bold"
+            >
+              診断して原因を見る
+            </button>
+            {health.message && (
+              <button
+                onClick={() => setDetail(health.message ?? '')}
+                className="text-xs px-3 py-1.5 border-2 border-accent bg-paper font-bold"
+              >
+                エラー内容を表示
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* エラー全文。alert と違い選択・コピーできる */}
       {detail && (
         <div className="mb-4 border-2 border-accent bg-red-50">

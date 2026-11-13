@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getAccessToken,
+  recordHealth,
   isConnected,
   isFreeeConfigured,
   serviceClient,
@@ -94,8 +95,19 @@ export async function POST(req: NextRequest) {
     const result = await pushPendingPunches(sb, accessToken, today, () =>
       getAccessToken(sb, true)
     );
+    const authBroken = result.errors.some((e) =>
+      /invalid_access_token|expired_access_token|\(401\)/.test(e)
+    );
+    await recordHealth(
+      sb,
+      !authBroken,
+      'sync',
+      authBroken ? 'unauthorized' : null,
+      authBroken ? result.errors.join('\n').slice(0, 1500) : null
+    );
     return NextResponse.json({ configured: true, ...result });
   } catch (err: any) {
+    await recordHealth(sb, false, 'sync', 'error', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

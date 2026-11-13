@@ -11,7 +11,13 @@
 // もう一度流せばよい。
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAccessToken, isConnected, isFreeeConfigured, serviceClient } from '@/lib/freee';
+import {
+  getAccessToken,
+  isConnected,
+  isFreeeConfigured,
+  recordHealth,
+  serviceClient,
+} from '@/lib/freee';
 import { pushWorkRecords } from '@/lib/freee-work-records';
 
 export const dynamic = 'force-dynamic';
@@ -64,8 +70,19 @@ export async function POST(req: NextRequest) {
     const result = await pushWorkRecords(sb, accessToken, body.slug, body.from, body.to, () =>
       getAccessToken(sb, true)
     );
+    const authBroken = result.errors.some((e) =>
+      /invalid_access_token|expired_access_token|\(401\)/.test(e)
+    );
+    await recordHealth(
+      sb,
+      !authBroken,
+      'work_records',
+      authBroken ? 'unauthorized' : null,
+      authBroken ? result.errors.join('\n').slice(0, 1500) : null
+    );
     return NextResponse.json(result);
   } catch (err: any) {
+    await recordHealth(sb, false, 'work_records', 'error', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

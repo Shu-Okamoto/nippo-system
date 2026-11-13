@@ -19,6 +19,7 @@ import {
   isConnected,
   isFreeeConfigured,
   probeCompany,
+  recordHealth,
   serviceClient,
   tokenStatus,
   toJstDateTime,
@@ -136,6 +137,13 @@ export async function GET(req: NextRequest) {
   }
 
   if (!hrMe.ok) {
+    await recordHealth(
+      sb,
+      false,
+      'diag',
+      String((hrMe.body as any)?.code ?? hrMe.status),
+      JSON.stringify(hrMe.body).slice(0, 1000)
+    );
     // 人事労務だけが落ちているのか、トークン自体が死んでいるのかを分ける。
     // 共通APIが通るなら、認可したアカウントの人事労務権限の問題
     const general = await getGeneralMe(accessToken);
@@ -298,6 +306,9 @@ export async function GET(req: NextRequest) {
       response: r.body,
     };
   }
+
+  // ここまで来れば人事労務APIは通っている。警告を解消する
+  await recordHealth(sb, true, 'diag');
 
   const allForbidden =
     checks.length > 0 && checks.every((c) => c.status === 403);

@@ -15,7 +15,13 @@
 // 手動送信と併用しても二重登録にならない。
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAccessToken, isConnected, isFreeeConfigured, serviceClient } from '@/lib/freee';
+import {
+  getAccessToken,
+  isConnected,
+  isFreeeConfigured,
+  recordHealth,
+  serviceClient,
+} from '@/lib/freee';
 import { pushPendingPunches } from '@/lib/freee-punches';
 import { pushWorkRecords } from '@/lib/freee-work-records';
 
@@ -52,6 +58,8 @@ export async function GET(req: NextRequest) {
   try {
     accessToken = await getAccessToken(sb);
   } catch (err: any) {
+    // トークンが用意できない=連携が切れている。画面で気付けるよう残す
+    await recordHealth(sb, false, 'cron', 'token', err.message);
     return NextResponse.json({ error: err.message }, { status: 502 });
   }
 
@@ -82,6 +90,23 @@ export async function GET(req: NextRequest) {
       workRecords[slug] = { error: String(err?.message ?? err).slice(0, 500) };
     }
   }
+
+  // 結果を残す。認証系の失敗だけを「連携が切れている」として扱う。
+  // 打刻の過去日エラーなどは連携の問題ではないので警告を出さない
+  const texts = [
+    JSON.stringify(punches ?? ''),
+    ...Object.values(workRecords).map((v) => JSON.stringify(v ?? '')),
+  ].join(' ');
+  const authBroken = /invalid_access_token|expired_access_token|\(401\)|トークン更新に失敗/.test(
+    texts
+  );
+  await recordHealth(
+    sb,
+    !authBroken,
+    'cron',
+    authBroken ? 'unauthorized' : null,
+    authBroken ? texts.slice(0, 1500) : null
+  );
 
   return NextResponse.json({ date: today, punches, work_records: workRecords });
 }
